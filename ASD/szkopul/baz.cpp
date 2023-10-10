@@ -71,7 +71,7 @@ void preprocess() {
 }
 
 int main() {
-    odczyt();lst
+    odczyt();
     preprocess();
     int m;
     scanf("%d", &m);

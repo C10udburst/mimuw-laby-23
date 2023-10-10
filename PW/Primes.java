@@ -26,6 +26,7 @@ public class Primes {
         @Override
         public void run() {
             for (int i = start; i < end; i += step) {
+                if (i*i > n) break;
                 if (!isPrime) return;
                 if (n % i == 0) isPrime = false;
             }
@@ -37,6 +38,7 @@ public class Primes {
         isPrime = true;
 
         for (int i = 0; i < MAIN_THREAD_PRIMES.length; i++) {
+            if (i*i > n) break;
             if (n % MAIN_THREAD_PRIMES[i] == 0) {
                 return false;
             }
@@ -60,7 +62,6 @@ public class Primes {
         // A sample test.
         for (int i = 2; i <= MAX_NUMBER_TO_CHECK; i++) {
             if (isPrime(i)) {
-                System.out.println(i);
                 ++primesCount;
             }
         }

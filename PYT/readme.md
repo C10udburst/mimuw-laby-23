@@ -3,6 +3,6 @@
 
 | file | zrobione | przesłane | pokazane |
 | :---: | :---: | :---: | :---: |
-| rain.ipynb | &cross; | &cross; | &cross; |
+| rain.ipynb | &check; | &cross; | &cross; |
 | editing-dist.ipynb | &cross; | &cross; | &cross; |
 

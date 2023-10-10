@@ -60,12 +60,12 @@ void preprocess() {
             wynik[k] = -1; // domyślnie suma nie istnieje
 
             // sprawdzamy czy można zamienić parzystą na nieparzystą
-            if (min_par != INFTY && max_par[k] != MINFTY)
-                wynik[k] = sumaR - min_par + max_par[k];
+            if (min_par != INFTY && max_npar[k] != MINFTY)
+                wynik[k] = sumaR - min_par + max_npar[k];
             
             // sprawdzamy czy można zamienić nieparzystą na parzystą
-            if (min_npar != INFTY && max_npar[k] != MINFTY)
-                wynik[k] = max(wynik[k], sumaR - min_npar + max_npar[k]);
+            if (min_npar != INFTY && max_par[k] != MINFTY)
+                wynik[k] = max(wynik[k], sumaR - min_npar + max_par[k]);
         }
     }
 }

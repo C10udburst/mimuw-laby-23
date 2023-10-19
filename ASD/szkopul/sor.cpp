@@ -53,31 +53,30 @@ ModInt T(int i, int j, int dir) {
     // (i, j) przedział oryginalnej tablicy który pozostał po jakiejś ilości cofnięć
     // dir - kierunek ostatniego cofnięcia
     if (tab[i][j][dir] != -1)
-        return tab[i][j][dir];
+        return tab[i][j][dir]; // już policzone wcześniej
 
     tab[i][j][dir] = 0;
 
-    if (j - i == 1) {
-        if (dir == LEFT) {
-            if (s[j] > s[i])
-                tab[i][j][dir] = 1;
-        } else {
-            if (s[i] < s[j])
-                tab[i][j][dir] = 1;
-        }
+    if (i == j) { // przedział jednoelementowy
+        // ponieważ nie chcemy podwójnie liczyć, załóżmy że cofnięcie było w lewo
+        tab[i][j][dir] = dir == LEFT ? 1 : 0;
         return tab[i][j][dir];
     }
 
     if (dir == LEFT) {
-        if (s[j] > s[i])
-            tab[i][j][dir] += T(i, j - 1, RIGHT);
-        if (s[j] > s[j - 1])
-            tab[i][j][dir] += T(i, j - 1, LEFT);
-    } else {
-        if (s[i] < s[j])
+        if (s[i] < s[i + 1]) {
             tab[i][j][dir] += T(i + 1, j, LEFT);
-        if (s[i + 1] < s[j])
+        }
+        if (s[i] < s[j]) {
             tab[i][j][dir] += T(i + 1, j, RIGHT);
+        }
+    } else {
+        if (s[j] > s[j - 1]) {
+            tab[i][j][dir] += T(i, j - 1, RIGHT);
+        }
+        if (s[j] > s[i]) {
+            tab[i][j][dir] += T(i, j - 1, LEFT);
+        }
     }
 
     return tab[i][j][dir];
@@ -90,7 +89,6 @@ int main() {
         scanf("%d", &s[i]);
     }
     
-
     // wypełnianie tablicy -1
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++)

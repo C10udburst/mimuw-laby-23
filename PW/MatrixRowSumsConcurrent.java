@@ -18,20 +18,15 @@ public class MatrixRowSumsConcurrent {
                 RowSummer rowSummer = new RowSummer(rowSums, row);
                 CyclicBarrier barrier = new CyclicBarrier(numColumns, rowSummer);
 
-                PerColumnDefinitionApplier[] perColumnDefinitionAppliers = new PerColumnDefinitionApplier[numColumns];
-                for (int columnNo = 0; columnNo < numColumns; columnNo++) {
-                    perColumnDefinitionAppliers[columnNo] = new PerColumnDefinitionApplier(columnNo, barrier, row, Thread.currentThread());
+                Thread[] threads = new Thread[numColumns];
+                Thread mainThread = Thread.currentThread();
+                for (int i = 0; i < numColumns; i++) {
+                    threads[i] = new Thread(new PerColumnDefinitionApplier(i, barrier, row, mainThread));
+                    threads[i].start();
                 }
 
-                for (int rowNo = 0; rowNo < numRows; rowNo++) {
-                    Thread[] threads = new Thread[numColumns];
-                    for (int columnNo = 0; columnNo < numColumns; columnNo++) {
-                        threads[columnNo] = new Thread(perColumnDefinitionAppliers[columnNo]);
-                        threads[columnNo].start();
-                    }
-                    for (Thread thread : threads) {
-                        thread.join();
-                    }
+                for(Thread t: threads) {
+                    t.join();
                 }
 
                 return rowSums;
@@ -39,11 +34,10 @@ public class MatrixRowSumsConcurrent {
 
             private class PerColumnDefinitionApplier implements Runnable {
 
-                private int myColumnNo;
+                private final int myColumnNo;
                 private final CyclicBarrier barrier;
                 private final int[] row;
                 private final Thread mainThread;
-                private int myRowNo;
 
 
                 private PerColumnDefinitionApplier(
@@ -60,16 +54,17 @@ public class MatrixRowSumsConcurrent {
 
                 @Override
                 public void run() {
-//                    System.out.println("PerColumnDefinitionApplier: " + myRowNo + ", " + myColumnNo);
-                    row[myColumnNo] = definition.applyAsInt(myRowNo, myColumnNo);
+                    for (int rowNo = 0; rowNo < numRows; rowNo++) {
+                        row[myColumnNo] = definition.applyAsInt(rowNo, myColumnNo);
 
-                    try {
-                        barrier.await();
-                    } catch (InterruptedException | BrokenBarrierException e) {
-                        mainThread.interrupt();
+                        try {
+                            barrier.await();
+                        } catch (InterruptedException | BrokenBarrierException e) {
+                            if (!mainThread.isInterrupted())
+                                mainThread.interrupt();
+                            Thread.currentThread().interrupt();
+                        }
                     }
-
-                    myRowNo++;
                 }
 
             }
@@ -89,7 +84,7 @@ public class MatrixRowSumsConcurrent {
 
                 @Override
                 public void run() {
-//                    System.out.println("RowSummer: " + currentRowNo);
+                    //System.out.println("RowSummer: " + currentRowNo);
                     for (int j : row) {
                         rowSums[currentRowNo] += j;
                     }
@@ -103,11 +98,7 @@ public class MatrixRowSumsConcurrent {
     public static void main(String[] args) {
         Matrix matrix = new Matrix(NUM_ROWS, NUM_COLUMNS, (row, column) -> {
             int a = 2 * column + 1;
-
-//            if (column == 23) {
-//                Thread.currentThread().interrupt();
-//            }
-
+            
             return (row + 1) * (a % 4 - 2) * a;
         });
         try {

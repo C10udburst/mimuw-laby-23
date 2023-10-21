@@ -1176,7 +1176,9 @@ INSERT INTO prace (id, tytul, rok, autorzy, punkty) VALUES (389, 'Automated infe
 SELECT UNIQUE autorstwo.autor as id_wspolnika, pracez2020.id AS id_pracownika FROM autorstwo INNER JOIN (
     SELECT praca, niemapracy2020.id AS id FROM autorstwo INNER JOIN (
         SELECT id FROM autorzy LEFT JOIN (
-            SELECT autor, praca FROM autorstwo RIGHT JOIN (SELECT id FROM prace WHERE rok = 2020) prace2020 ON autorstwo.praca = prace2020.id
+            SELECT autor, praca FROM autorstwo RIGHT JOIN (
+                SELECT id FROM prace WHERE rok = 2020
+            ) prace2020 ON autorstwo.praca = prace2020.id
         ) ON id = autor WHERE praca IS NULL AND ryzyko = 1
     ) niemapracy2020 ON autorstwo.autor = niemapracy2020.id
 ) pracez2020 ON autorstwo.praca = pracez2020.praca WHERE pracez2020.id != autorstwo.autor;

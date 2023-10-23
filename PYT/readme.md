@@ -3,6 +3,7 @@
 
 | file | zrobione | przesłane | pokazane |
 | :---: | :---: | :---: | :---: |
-| rain.ipynb | &check; | &cross; | &cross; |
-| editing-dist.ipynb | &check; | &cross; | &cross; |
-| anagramy.ipynb | &check; | &cross; | &cross; |
+| rain.ipynb | &check; | &check; | &check; |
+| editing-dist.ipynb | &check; | &check; | &check; |
+| anagramy.ipynb | &check; | &check; | &check; |
+| cosmetic.py | &cross; | &cross; | &cross; |

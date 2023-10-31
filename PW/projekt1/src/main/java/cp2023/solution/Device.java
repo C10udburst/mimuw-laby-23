@@ -19,12 +19,12 @@ public class Device {
         this.freeSlotsFuture = freeSlots;
     }
 
-    public void acquireFutureSlot() throws InterruptedException {
-        mutex.acquire();
+    public void acquireFutureSlot() {
+        mutex.acquireUninterruptibly();
         assert freeSlotsFuture >= 0;
         if (freeSlotsFuture == 0) {
             mutex.release();
-            reservationSemaphore.acquire();
+            reservationSemaphore.acquireUninterruptibly();
             //mutex inherited
         }
         // freeSlotsFuture > 0
@@ -33,12 +33,12 @@ public class Device {
         mutex.release();
     }
 
-    public void acquireSlot() throws InterruptedException {
-        mutex.acquire();
+    public void acquireSlot() {
+        mutex.acquireUninterruptibly();
         assert freeSlots >= 0;
         if (freeSlots == 0) {
             mutex.release();
-            acquireSemaphore.acquire();
+            acquireSemaphore.acquireUninterruptibly();
             //mutex inherited
         }
         // freeSlots > 0
@@ -48,7 +48,7 @@ public class Device {
     }
 
     public void releaseFutureSlot() {
-        mutex.acquireUninterruptibly();
+        mutex.acquireUninterruptibly(); // TODO: maybe not uninterruptibly?
         assert freeSlotsFuture >= 0;
         freeSlotsFuture++;
         if(reservationSemaphore.hasQueuedThreads()) {
@@ -60,11 +60,28 @@ public class Device {
     }
 
     public void releaseSlot() {
-        mutex.acquireUninterruptibly();
+        mutex.acquireUninterruptibly();  // TODO: maybe not uninterruptibly?
         assert freeSlots >= 0;
         freeSlots++;
         if(acquireSemaphore.hasQueuedThreads()) {
             acquireSemaphore.release();
+            //mutex inherited
+        } else {
+            mutex.release();
+        }
+    }
+
+    public void releaseBothSlots() {
+        mutex.acquireUninterruptibly(); // TODO: maybe not uninterruptibly?
+        assert freeSlots >= 0;
+        assert freeSlotsFuture >= 0;
+        freeSlots++;
+        freeSlotsFuture++;
+        if (acquireSemaphore.hasQueuedThreads()) {
+            acquireSemaphore.release();
+            //mutex inherited
+        } else if(reservationSemaphore.hasQueuedThreads()) {
+            reservationSemaphore.release();
             //mutex inherited
         } else {
             mutex.release();

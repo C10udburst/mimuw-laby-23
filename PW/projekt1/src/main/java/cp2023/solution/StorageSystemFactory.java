@@ -9,10 +9,13 @@ package cp2023.solution;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import cp2023.base.ComponentId;
 import cp2023.base.DeviceId;
 import cp2023.base.StorageSystem;
+import cp2023.exceptions.TransferException;
 
 
 public final class StorageSystemFactory {
@@ -25,8 +28,18 @@ public final class StorageSystemFactory {
         for (Map.Entry<DeviceId, Integer> entry : deviceTotalSlots.entrySet()) {
             devices.put(entry.getKey(), new Device(entry.getValue()));
         }
-        
-        return new StorageSystemImpl(devices);
+    
+        var storage = new StorageSystemImpl(devices);
+
+        for (Map.Entry<ComponentId, DeviceId> entry : componentPlacement.entrySet()) {
+            try {
+                storage.execute(new ComponentCreate(entry.getKey(), entry.getValue()));
+            } catch (TransferException e) {
+                assert false;
+            }
+        }
+
+        return storage;
     }
 
 }

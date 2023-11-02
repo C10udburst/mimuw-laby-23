@@ -57,26 +57,7 @@ ModInt results_a[MAX_K + 3];
 ModInt results_b[MAX_K + 3];
 int sequence[MAX_N + 3];
 
-int n, k;
-
-#define DEBUG
-
-// // następny przebieg bierze wartości z poprzedniego przebiegu
-// // i wypełnia drzewo od korzenia do liści
-// ModInt pass(int node, ModInt* results) {
-//     tree[node] = results[node - n];
-//     int parent = node / 2;
-//     ModInt result = 0;
-//     while (parent > 0) {
-//         if (node % 2 == 0) {
-//             result += tree[parent * 2 + 1];
-//         }
-//         tree[parent] += results[node - n];
-//         node = parent;
-//         parent /= 2;
-//     }
-//     return result;
-// }
+int n, k, base;
 
 ModInt query(int node) {
     ModInt result = 0;
@@ -89,30 +70,24 @@ ModInt query(int node) {
 }
 
 void update(int node, ModInt v) {
-    tree[node] = v;
-    int parent = node / 2;
-    while (parent > 0) {
-        if (node % 2 == 0) {
-            tree[parent] += v;
-        }
-        node = parent;
-        parent /= 2;
+    for (; node > 0; node /= 2) {
+        tree[node] += v;
     }
 }
 
-#ifdef DEBUG
-void print_tree() {
-    for (int i = 0; i <= 2*n; i++) {
-        cout << tree[i] << " ";
-    }
-    cout << "\n";
-}
-#endif
 
 void reset_tree() {
-    for (int i = 0; i <= 2*n; i++) {
+    for (int i = 0; i <= 2*n + 1; i++) {
         tree[i] = 0;
     }
+}
+
+int calculate2power(int n) {
+    int result = 1;
+    while (result < n) {
+        result <<= 1;
+    }
+    return result;
 }
 
 int main() {
@@ -122,38 +97,27 @@ int main() {
     cin >> n >> k;
     for (int i = 0; i < n; i++) {
         cin >> sequence[i];
+        sequence[i] -= 1;
     }
+
+    base = calculate2power(n);
 
     // drzewo przedziałowe
     ModInt* results = results_a;
     ModInt* tmp_results = results_b;
 
-    for (int i = 0; i <= k; i++) {
+    for (int i = 0; i < n; i++) {
         results[i] = 1;
     }
 
-    while(k--) {
+    while(--k) {
         for (int i = 0; i < n; i++) {
-            int val = sequence[i] - 1;
-            int node = n + val; // liście zajmują przedział [n, 2*n)
+            int val = sequence[i];
+            int node = base + val; // liście zajmują przedział [base, 2*base)
             ModInt result = query(node);
             update(node, results[val]);
             tmp_results[val] = result;
-            cout << "[" << val << "] " << result << "  ";
-            #ifdef DEBUG
-            print_tree();
-            #endif
         }
-        #ifdef DEBUG
-        for (int i = 0; i < n; i++) {
-            cout << results[i] << " ";
-        }
-        cout << "-> ";
-        for (int i = 0; i < n; i++) {
-            cout << tmp_results[i] << " ";
-        }
-        cout << "\n";
-        #endif
 
         // zamieniamy wskaźniki
         ModInt* tmp = results;

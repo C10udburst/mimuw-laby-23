@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+
+from sys import argv
+from glob import glob
+from pathlib import Path
+from os import chdir, system, listdir, getcwd
+from os.path import isdir
+from time import time
+
+if argv[1] == "c":
+    system("clear")
+    argv = [argv[0]] + argv[2:]
+if argv[1] == "szkopul" or argv[1] == "szk":
+    if len(argv) < 3:
+        system("xdg-open https://szkopul.edu.pl/c/laboratorium-z-asd-2023/ > /dev/null 2>&1 &")
+    else:
+        system(f"xdg-open https://szkopul.edu.pl/c/laboratorium-z-asd-2023/p/{argv[2]} > /dev/null 2>&1 &")
+    exit(0)
+    
+torun = argv[1]
+
+found = glob(f"**/{torun}.*", recursive=True)
+if len(found) == 0:
+    found = glob(f"**/{torun}", recursive=True)
+
+if len(found) == 0:
+    print(f"Could not find {torun}")
+    exit(1)
+    
+if len(found) > 1:
+    print(f"Found multiple {torun}:")
+    for f in found:
+        print(f"  {f}")
+    exit(1)
+    
+target = Path(found[0])
+parent = target.parent
+basename = target.name
+
+startfolder = getcwd()
+
+print("Running", target)
+
+chdir(parent)
+
+def runprog(cmd):
+    before = time()
+    code = system(cmd)
+    after = time()
+    print(f"\nRan in {after - before:.2f}s, exit code {code}")
+
+if basename.endswith(".py"):
+    runprog(f"python3 {basename} {' '.join(argv[2:])}")
+elif basename.endswith(".cpp"):
+    system(f"g++ -std=c++17 {basename}")
+    runprog(f"./a.out {' '.join(argv[2:])}")
+elif basename.endswith(".c"):
+    system(f"gcc -std=c11 {basename}")
+    runprog(f"./a.out {' '.join(argv[2:])}")
+elif basename.endswith(".java"):
+    system(f"javac {basename}")
+    runprog(f"java {basename[:-5]} {' '.join(argv[2:])}")
+elif isdir(basename):
+    stuff = listdir(basename)
+    if "gradlew" in stuff:
+        chdir(basename)
+        system(f"./gradlew run && ./gradlew test")
+    if "makefile" in stuff or "Makefile" in stuff:
+        chdir(basename)
+        system(f"make && make test")
+else:
+    print(f"Unknown file type {basename}")
+    chdir(startfolder)
+    exit(1)
+    
+chdir(startfolder)

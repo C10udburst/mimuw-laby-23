@@ -48,45 +48,35 @@ struct ModInt {
     }
 };
 
-const int TREE_SIZE = 1 << 15;
-const int MAX_N = 2e4;
-const int MAX_K = 10;
 
-ModInt tree[TREE_SIZE * 2 + 3];
-ModInt results_a[MAX_K + 3];
-ModInt results_b[MAX_K + 3];
-int sequence[MAX_N + 3];
+const int K = 10 + 1;
+const int N = 2e5 + 1;
+const int BASE = 1 << 16;
 
-int n, k, base;
+int n, k;
+ModInt tree[K][BASE*2 + 1];
+int input[N];
 
-ModInt query(int node) {
-    ModInt result = 0;
-    for (; node > 0; node /= 2) {
-        if (node % 2 == 0) {
-            result += tree[node + 1];
+void add(int k, int node, int v) {
+    for (node+=BASE; node > 0; node /= 2) {
+        tree[k][node] += v;
+    }
+}
+
+ModInt query(int k, int left, int right) {
+    left+=BASE; right+=BASE;
+
+    ModInt result = tree[k][left] + tree[k][right];
+    
+    for (; left/2 < right/2; left /= 2, right /= 2) {
+        if (left % 2 == 0) {
+            result += tree[k][left+1];
+        }
+        if (right % 2 == 1) {
+            result += tree[k][right-1];
         }
     }
-    return result;
-}
 
-void update(int node, ModInt v) {
-    for (; node > 0; node /= 2) {
-        tree[node] += v;
-    }
-}
-
-
-void reset_tree() {
-    for (int i = 0; i <= 2*n + 1; i++) {
-        tree[i] = 0;
-    }
-}
-
-int calculate2power(int n) {
-    int result = 1;
-    while (result < n) {
-        result <<= 1;
-    }
     return result;
 }
 
@@ -95,42 +85,16 @@ int main() {
     ios_base::sync_with_stdio(0);
 
     cin >> n >> k;
-    for (int i = 0; i < n; i++) {
-        cin >> sequence[i];
-        sequence[i] -= 1;
+    for (int i = 1; i <= n; i++) {
+        cin >> input[i];
     }
 
-    base = calculate2power(n);
-
-    // drzewo przedziałowe
-    ModInt* results = results_a;
-    ModInt* tmp_results = results_b;
-
-    for (int i = 0; i < n; i++) {
-        results[i] = 1;
-    }
-
-    while(--k) {
-        for (int i = 0; i < n; i++) {
-            int val = sequence[i];
-            int node = base + val; // liście zajmują przedział [base, 2*base)
-            ModInt result = query(node);
-            update(node, results[val]);
-            tmp_results[val] = result;
+    for (int i = n; i >= 1; i--) {
+        add(1, input[i], 1);
+        for (int j = 2; j <= k; j++) {
+            add(j, input[i], query(j-1, 0, input[i]-1));
         }
-
-        // zamieniamy wskaźniki
-        ModInt* tmp = results;
-        results = tmp_results;
-        tmp_results = tmp;
-
-        reset_tree();
     }
 
-    ModInt final_result = 0;
-    for (int i = 0; i < n; i++) {
-        final_result += results[i];
-    }
-
-    cout << final_result;
+    cout << query(k, 0, n);
 }

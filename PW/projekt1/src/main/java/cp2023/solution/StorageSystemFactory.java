@@ -23,23 +23,7 @@ public final class StorageSystemFactory {
     public static StorageSystem newSystem(
         Map<DeviceId, Integer> deviceTotalSlots,
         Map<ComponentId, DeviceId> componentPlacement) {
-        
-        ConcurrentHashMap<DeviceId, Device> devices = new ConcurrentHashMap<>();
-        for (Map.Entry<DeviceId, Integer> entry : deviceTotalSlots.entrySet()) {
-            devices.put(entry.getKey(), new Device(entry.getValue()));
-        }
-    
-        var storage = new StorageSystemImpl(devices);
-
-        for (Map.Entry<ComponentId, DeviceId> entry : componentPlacement.entrySet()) {
-            try {
-                storage.execute(new ComponentCreate(entry.getKey(), entry.getValue()));
-            } catch (TransferException e) {
-                assert false;
-            }
-        }
-
-        return storage;
+        return new StorageSystemImpl(deviceTotalSlots, componentPlacement);
     }
 
 }

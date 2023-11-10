@@ -45,7 +45,7 @@ public class MatrixRowSumsThreadpool {
                 return rowSums;
             }
             catch (ExecutionException e) {
-                throw new InterruptedException(e);
+                throw new InterruptedException(e.toString());
             }
             finally {
                 pool.shutdown();

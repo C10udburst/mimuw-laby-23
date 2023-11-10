@@ -52,13 +52,16 @@ def runprog(cmd):
 if basename.endswith(".py"):
     runprog(f"python3 {basename} {' '.join(argv[2:])}")
 elif basename.endswith(".cpp"):
-    system(f"g++ -std=c++17 {basename}")
+    if system(f"g++ -std=c++17 {basename}") != 0:
+        exit(1)
     runprog(f"./a.out {' '.join(argv[2:])}")
 elif basename.endswith(".c"):
-    system(f"gcc -std=c11 {basename}")
+    if system(f"gcc -std=c11 {basename}") != 0:
+        exit(1)
     runprog(f"./a.out {' '.join(argv[2:])}")
 elif basename.endswith(".java"):
-    system(f"javac {basename}")
+    if system(f"javac {basename}") != 0:
+        exit(1)
     runprog(f"java {basename[:-5]} {' '.join(argv[2:])}")
 elif isdir(basename):
     stuff = listdir(basename)

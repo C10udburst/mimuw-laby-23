@@ -9,9 +9,26 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    main {
+        // Define the location of your java source files.
+        java {
+            srcDir 'src'
+        }
+    }
+    test {
+        // Define the location of your test source files.
+        java {
+            srcDir 'src'
+        }
+    }
+}
+
 dependencies {
+    implementation 'org.junit.jupiter:junit-jupiter:5.8.1'
+
     // Use JUnit test framework.
-    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
 
     // This dependency is used by the application.
     implementation 'com.google.guava:guava:32.1.1-jre'
@@ -27,4 +44,15 @@ java {
 application {
     // Define the main class for the application.
     mainClass = 'cp2023.demo.TransferBurst'
+}
+
+
+test {
+    enableAssertions = true
+    maxParallelForks = Runtime.runtime.availableProcessors()
+    useJUnitPlatform()
+    dependsOn 'cleanTest'
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
 }

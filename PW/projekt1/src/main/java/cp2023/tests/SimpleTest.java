@@ -34,7 +34,7 @@ public class SimpleTest {
                 new ComponentId(3), new DeviceId(3)
             )
         );
-        execute(system, transfers, 3, 10);
+        execute(system, transfers, 3, 1, 0);
         assertEquals(3, prepareCount.get(), "Prepare");
         assertEquals(3, performCount.get(), "Perform");
         assertComponentOnDevice(system, new ComponentId(1), new DeviceId(2));
@@ -58,7 +58,7 @@ public class SimpleTest {
                 new ComponentId(1), new DeviceId(1)
             )
         );
-        execute(system, transfers, 3, 10);
+        execute(system, transfers, 3, 1, 0);
         assertEquals(transfers.size(), prepareCount.get(), "Prepare");
         assertEquals(transfers.size(), performCount.get(), "Perform");
         assertComponentOnDevice(system, new ComponentId(2), new DeviceId(1));

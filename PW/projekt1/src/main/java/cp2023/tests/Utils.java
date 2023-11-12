@@ -4,44 +4,37 @@ import cp2023.base.ComponentId;
 import cp2023.base.ComponentTransfer;
 import cp2023.base.DeviceId;
 import cp2023.base.StorageSystem;
-import cp2023.exceptions.TransferException;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class Utils {
 
     public static void assertComponentOnDevice(StorageSystem system, ComponentId component, DeviceId device) {
-        assertDoesNotThrow(() -> system.execute(new ComponentTransfer() {
-            @Override
-            public ComponentId getComponentId() {
-                return component;
-            }
-
-            @Override
-            public DeviceId getSourceDeviceId() {
-                return device;
-            }
-
-            @Override
-            public DeviceId getDestinationDeviceId() {
-                return null;
-            }
-
-            @Override
-            public void prepare() { }
-
-            @Override
-            public void perform() { }
-        }));
+        // ugly reflection, assumes that there will exist a field of type HashMap<ComponentId, DeviceId> in StorageSystem
+        for (var field: system.getClass().getDeclaredFields()) {
+            try {
+                var couldAcess = field.canAccess(system);
+                field.setAccessible(true);
+                try {
+                    var componentPlacement = (HashMap<?, ?>) field.get(system);
+                    if (componentPlacement.keySet().stream().findFirst().get().getClass() != ComponentId.class) {
+                        continue;
+                    }
+                    if (componentPlacement.values().stream().findFirst().get().getClass() != DeviceId.class) {
+                        continue;
+                    }
+                    assertEquals(device, componentPlacement.get(component), "Component " + component + " on device " + device);
+                } catch (ClassCastException | IllegalAccessException | IllegalArgumentException ignored) {
+                }
+                field.setAccessible(couldAcess);
+            } catch (IllegalArgumentException ignored) { }
+        }
     }
 
     public static ComponentTransfer createTransfer(Integer from, Integer to, int component, AtomicInteger prepareCount, AtomicInteger performCount, int sleep) {
@@ -85,22 +78,36 @@ public class Utils {
         };
     }
 
-    public static void execute(StorageSystem system, List<ComponentTransfer> transfers, int pool, int limit) {
+    public static void execute(StorageSystem system, List<ComponentTransfer> transfers, int pool, int limit, int interruptCount) {
         var errors = new ConcurrentLinkedQueue<Exception>();
+        var interruptions = new AtomicInteger(0);
         List<Callable<Void>> runnables = new ArrayList<>();
+        var latch = new CountDownLatch(transfers.size());
         for (var transfer : transfers) {
             runnables.add(() -> {
                 try {
                     system.execute(transfer);
-                } catch (TransferException e) {
-                    errors.add(e);
+                } catch (Exception e) {
+                    if (e.getMessage().equals("panic: unexpected thread interruption")) {
+                        interruptions.incrementAndGet();
+                        latch.countDown();
+                    } else {
+                        e.printStackTrace();
+                        errors.add(e);
+                    }
                 }
+                latch.countDown();
                 return null;
             });
         }
         var executor = Executors.newFixedThreadPool(pool);
         assertDoesNotThrow(() -> executor.invokeAll(runnables, limit, TimeUnit.SECONDS));
-
-        assertTrue(errors.isEmpty(), "Errors: " + errors);
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        assertEquals(0, errors.size(), "Errors");
+        assertEquals(interruptCount, interruptions.get(), "Interrupts");
     }
 }

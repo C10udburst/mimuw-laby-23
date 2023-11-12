@@ -10,7 +10,6 @@ public class FrozenTransfer {
     public final ComponentTransfer transfer;
     public final Semaphore semaphore;
     public CyclicBarrier barrier;
-    public boolean isInCycle = false;
 
     public FrozenTransfer(ComponentTransfer transfer, Semaphore semaphore) {
         this.transfer = transfer;

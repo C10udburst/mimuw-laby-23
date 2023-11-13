@@ -1,4 +1,4 @@
-package cp2023.tests;
+package cp2023.tests.v1;
 
 
 import cp2023.base.ComponentId;
@@ -10,10 +10,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static cp2023.tests.Utils.*;
+import static cp2023.tests.v1.Utils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class CyclesTest {
+public class V1CyclesTest {
     @Test
     public void shrimple() {
         var prepareCount = new AtomicInteger(0);
@@ -72,7 +72,7 @@ public class CyclesTest {
                 )
         );
 
-        execute(system, transfers, 5, 3, 2);
+        execute(system, transfers, 10, 3, 2);
         // transfers 1, 5, 4 should be performed, but not 2, 3
         assertEquals(3, prepareCount.get(), "Prepare");
         assertEquals(3, performCount.get(), "Perform");
@@ -121,7 +121,7 @@ public class CyclesTest {
                         new ComponentId(10), new DeviceId(6)
                 )
         );
-        execute(system, transfers, 10, 7, transfers.size() - 4); // all but 4 should fail
+        execute(system, transfers, 10, 10, transfers.size() - 4); // all but 4 should fail
         assertEquals(4, prepareCount.get(), "Prepare");
         assertEquals(4, performCount.get(), "Perform");
         // transfers 10, 1, 5, 4 should be performed
@@ -171,7 +171,7 @@ public class CyclesTest {
                         new ComponentId(10), new DeviceId(6)
                 )
         );
-        execute(system, transfers, 10, 7, transfers.size() - 4); // all but 4 should fail
+        execute(system, transfers, 10, 10, transfers.size() - 4); // all but 4 should fail
         assertEquals(4, prepareCount.get(), "Prepare");
         assertEquals(4, performCount.get(), "Perform");
         // transfers 10, 1, 7, 3

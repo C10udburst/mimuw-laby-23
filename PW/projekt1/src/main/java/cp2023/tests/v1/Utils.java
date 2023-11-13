@@ -1,4 +1,4 @@
-package cp2023.tests;
+package cp2023.tests.v1;
 
 import cp2023.base.ComponentId;
 import cp2023.base.ComponentTransfer;
@@ -89,7 +89,7 @@ public class Utils {
                     system.execute(transfer);
                 } catch (Exception e) {
                     if (e.getMessage().equals("panic: unexpected thread interruption")) {
-                        interruptions.incrementAndGet();
+                        System.out.println("interrupted threads: " + interruptions.incrementAndGet());
                         latch.countDown();
                     } else {
                         e.printStackTrace();

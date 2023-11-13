@@ -29,7 +29,13 @@ public class StorageSystemImpl implements StorageSystem {
         }
         this.componentPlacement = new ConcurrentHashMap<>(componentPlacement);
         for (var component : componentPlacement.keySet()) {
+            if (!freeSlots.containsKey(componentPlacement.get(component))) {
+                throw new IllegalArgumentException("Device " + componentPlacement.get(component) + " does not exist");
+            }
             freeSlots.computeIfPresent(componentPlacement.get(component), (k, v) -> v - 1);
+            if (freeSlots.get(componentPlacement.get(component)) < 0) {
+                throw new IllegalArgumentException("Device " + componentPlacement.get(component) + " has too many components");
+            }
         }
 
     }
@@ -41,6 +47,10 @@ public class StorageSystemImpl implements StorageSystem {
 
         if (src == null && dst == null) {
             throw new IllegalTransferType(transfer.getComponentId());
+        }
+
+        if (src == dst) {
+            throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), src);
         }
 
         checkDevice(src);

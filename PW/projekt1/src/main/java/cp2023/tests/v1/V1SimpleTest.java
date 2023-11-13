@@ -1,4 +1,4 @@
-package cp2023.tests;
+package cp2023.tests.v1;
 
 import cp2023.base.ComponentId;
 import cp2023.base.DeviceId;
@@ -9,10 +9,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static cp2023.tests.Utils.*;
+import static cp2023.tests.v1.Utils.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-public class SimpleTest {
+public class V1SimpleTest {
     @Test
     public void multipleNoCycle() {
         var prepareCount = new AtomicInteger(0);

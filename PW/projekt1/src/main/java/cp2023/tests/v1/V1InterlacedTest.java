@@ -1,19 +1,21 @@
-package cp2023.tests;
+package cp2023.tests.v1;
 
 import cp2023.base.ComponentId;
 import cp2023.base.ComponentTransfer;
 import cp2023.base.DeviceId;
 import cp2023.solution.StorageSystemFactory;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.RepetitionInfo;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.Semaphore;
 
-import static cp2023.tests.Utils.*;
+import static cp2023.tests.v1.Utils.*;
 
-public class InterlacedTest {
-    private class SemaphoreTransfer implements ComponentTransfer {
+public class V1InterlacedTest {
+    private static class SemaphoreTransfer implements ComponentTransfer {
 
         private final Semaphore semaphore;
         private final ComponentId componentId;
@@ -21,11 +23,11 @@ public class InterlacedTest {
         private final DeviceId destinationDeviceId;
 
 
-        public SemaphoreTransfer(Semaphore semaphore, int componentId, int sourceDeviceId, int destinationDeviceId) {
+        public SemaphoreTransfer(Semaphore semaphore, int componentId, Integer sourceDeviceId, Integer destinationDeviceId) {
             this.semaphore = semaphore;
             this.componentId = new ComponentId(componentId);
-            this.sourceDeviceId = new DeviceId(sourceDeviceId);
-            this.destinationDeviceId = new DeviceId(destinationDeviceId);
+            this.sourceDeviceId = (sourceDeviceId == null) ? null : new DeviceId(sourceDeviceId);
+            this.destinationDeviceId = (destinationDeviceId == null) ? null : new DeviceId(destinationDeviceId);
         }
 
         @Override
@@ -62,13 +64,13 @@ public class InterlacedTest {
         }
     }
 
-    @Test
-    public void test1() {
-        var semaphore = new Semaphore(0, false);
+    @RepeatedTest(value=5, name = "cycleShrimple {currentRepetition}/{totalRepetitions}")
+    public void cycleShrimple(RepetitionInfo ri) {
+        var semaphores = List.of(new Semaphore(0), new Semaphore(0), new Semaphore(0));
         List<ComponentTransfer> transfers = List.of(
-                new SemaphoreTransfer(semaphore, 1, 1, 2),
-                new SemaphoreTransfer(semaphore, 2, 2, 3),
-                new SemaphoreTransfer(semaphore, 3, 3, 1)
+                new SemaphoreTransfer(semaphores.get(0), 1, 1, 2),
+                new SemaphoreTransfer(semaphores.get(1), 2, 2, 3),
+                new SemaphoreTransfer(semaphores.get(2), 3, 3, 1)
         );
         var system = StorageSystemFactory.newSystem(
                 Map.of(
@@ -83,6 +85,9 @@ public class InterlacedTest {
                 )
         );
 
+        var seed = ri.getCurrentRepetition() * 2137L;
+        var random = new Random(seed);
+
         var t = new Thread(() -> {
             while (true) {
                 try {
@@ -90,7 +95,7 @@ public class InterlacedTest {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-                semaphore.release(Math.random() < 0.5 ? 1 : 2);
+                semaphores.get(random.nextInt(3)).release();
             }
         });
         t.start();
@@ -98,6 +103,42 @@ public class InterlacedTest {
         assertComponentOnDevice(system, new ComponentId(1), new DeviceId(2));
         assertComponentOnDevice(system, new ComponentId(2), new DeviceId(3));
         assertComponentOnDevice(system, new ComponentId(3), new DeviceId(1));
+    }
+
+    @RepeatedTest(value=5, name = "simpleSingleDevice {currentRepetition}/{totalRepetitions}")
+    public void simpleSingleDevice(RepetitionInfo ri) {
+        var semaphores = List.of(new Semaphore(0), new Semaphore(0), new Semaphore(0));
+        List<ComponentTransfer> transfers = List.of(
+                /*createTransfer(1, null, 1, prepareCount, performCount, 2),
+                createTransfer(null, 1, 2, prepareCount, performCount, 0)*/
+                new SemaphoreTransfer(semaphores.get(0), 1, 1, null),
+                new SemaphoreTransfer(semaphores.get(1), 2, null, 1)
+        );
+        var system = StorageSystemFactory.newSystem(
+                Map.of(
+                        new DeviceId(1), 1
+                ),
+                Map.of(
+                        new ComponentId(1), new DeviceId(1)
+                )
+        );
+
+        var seed = ri.getCurrentRepetition() * 2137L;
+        var random = new Random(seed);
+
+        var t = new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                semaphores.get(random.nextInt(2)).release();
+            }
+        });
+        t.start();
+        execute(system, transfers, 3, 20, 0);
+        assertComponentOnDevice(system, new ComponentId(2), new DeviceId(1));
     }
 }
 

@@ -24,8 +24,8 @@ public class StorageSystemImpl implements StorageSystem {
         this.freeSlots = new HashMap<>(deviceTotalSlots);
         this.waitingTransfers = new ConcurrentHashMap<>();
         this.isBusy = new ConcurrentHashMap<>();
-        for (var device : deviceTotalSlots.keySet()) {
-            this.waitingTransfers.put(device, new ConcurrentLinkedDeque<>());
+        for (var dev: deviceTotalSlots.keySet()) {
+            this.waitingTransfers.put(dev, new ConcurrentLinkedDeque<>());
         }
         this.componentPlacement = new ConcurrentHashMap<>(componentPlacement);
         for (var component : componentPlacement.keySet()) {
@@ -49,15 +49,13 @@ public class StorageSystemImpl implements StorageSystem {
             throw new IllegalTransferType(transfer.getComponentId());
         }
 
-        if (src == dst) {
-            throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), src);
-        }
-
         checkDevice(src);
         checkDevice(dst);
 
+        mutexAcquire(); // maybe we could do it after the 4 checks, but this guarantees that there isn't a weird configuration that breaks the system
+
         if (src == null && componentPlacement.containsKey(transfer.getComponentId())) {
-            throw new ComponentAlreadyExists(transfer.getComponentId());
+            throw new ComponentAlreadyExists(transfer.getComponentId(), componentPlacement.get(transfer.getComponentId()));
         }
 
         var currentSrc = componentPlacement.getOrDefault(transfer.getComponentId(), null);
@@ -67,24 +65,182 @@ public class StorageSystemImpl implements StorageSystem {
             throw new ComponentDoesNotExist(transfer.getComponentId(), src);
         }
 
+        if (src != null && src.equals(dst)) {
+            throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), src);
+        }
+
         if (isBusy
                 .computeIfAbsent(transfer.getComponentId(), k -> new AtomicBoolean(false))
                 .getAndSet(true)) {
             throw new ComponentIsBeingOperatedOn(transfer.getComponentId());
         }
 
-        // we are now the only ones operating on this component
+        // mutexAcquire();
 
-        try {
-            mutex.acquire();
-        } catch (InterruptedException e) {
-            throw new RuntimeException("panic: unexpected thread interruption");
-        }
-
-        if (dst == null || freeSlots.get(dst) > 0) {
-            moveChain(transfer);
+        if (dst == null) {
+            noDepend(transfer);
+        } else if (freeSlots.get(dst) > 0) {
+            freeSlots.computeIfPresent(dst, (k, v) -> v - 1);
+            noDepend(transfer);
         } else {
-            moveCycle(transfer);
+            hasDepend(transfer);
+        }
+    }
+
+    /**
+     * This function is called when our component has no dependencies.
+     * We perform a whole chain of transfers that start from our component, or we perform the transfer by ourselves.
+     */
+    private void noDepend(ComponentTransfer transfer) {
+        var src = transfer.getSourceDeviceId();
+        var barrier = walkChain(src, 1);
+        mutex.release();
+        if (barrier == null) {
+            // we have not found a chain, we will transfer it by ourselves
+            transfer.prepare();
+            transfer.perform();
+            mutexAcquire();
+            if (src != null) {
+                var next = waitingTransfers.get(src).poll();
+                if (next != null) {
+                    // in the time we were performing the transfer, a new transfer appeared
+                    assert next.barrier == null;
+                    updatePosition(transfer);
+                    mutex.release();
+                    next.semaphore.release();
+                } else {
+                    // no new transfer appeared, we can release the slot
+                    freeSlots.computeIfPresent(src, (k, v) -> v + 1);
+                    updatePosition(transfer);
+                    mutex.release();
+                }
+            } else {
+                updatePosition(transfer);
+                mutex.release();
+            }
+
+        } else {
+            // we found a chain, we will transfer it concurrently
+            performWBarrier(transfer, barrier, true);
+        }
+    }
+
+    /**
+     * This function is called when our component can't be transferred immediately.
+     * We either find a cycle and transfer it concurrently, or we sleep until we are woken up.
+     */
+    private void hasDepend(ComponentTransfer transfer) {
+        var src = transfer.getSourceDeviceId();
+        var dst = transfer.getDestinationDeviceId();
+        if (src == null) {
+            // we are creating a new component, there is no cycle, so we sleep
+            var ft = new FrozenTransfer(transfer, new Semaphore(0));
+            waitingTransfers.get(dst).add(ft);
+            mutex.release();
+            ft.semAcquire();
+            onFrozenWake(ft);
+        } else {
+            // we are moving a component
+            var barrier = walkCycle(src, new HashSet<>(), 1, dst);
+            if (barrier == null) {
+                // no cycle/chain exists yet, we sleep
+                var ft = new FrozenTransfer(transfer, new Semaphore(0));
+                waitingTransfers.get(dst).add(ft);
+                mutex.release();
+                ft.semAcquire();
+                onFrozenWake(ft);
+            } else {
+                // we found a cycle, we will transfer it concurrently
+                mutex.release();
+                assert dst != null;
+                performWBarrier(transfer, barrier, true);
+            }
+        }
+    }
+
+    /**
+     * This function sets up a barrier for a chain and wakes all the components in the chain.
+     */
+    private CyclicBarrier walkChain(DeviceId start, int depth) {
+        if (start == null) return null;
+        var transfer = waitingTransfers.get(start).poll();
+        if (transfer == null) return null;
+        var barrier = walkChain(transfer.transfer.getSourceDeviceId(), depth + 1);
+        if (barrier == null) {
+            barrier = new CyclicBarrier(depth + 1);
+            freeSlots.computeIfPresent(transfer.transfer.getSourceDeviceId(), (k, v) -> v + 1); // we are moving the component away and no new component is coming
+        }
+        transfer.barrier = barrier;
+        transfer.semaphore.release();
+        return barrier;
+    }
+
+
+    /**
+     * This function finds a cycle and sets up a barrier for it and wakes all the components in the cycle.
+     * Or it returns null if no cycle exists.
+     */
+    private CyclicBarrier walkCycle(DeviceId start, HashSet<FrozenTransfer> visited, int depth, DeviceId target) {
+        assert target != null;
+        if (start == null) return null;
+        var waiting = waitingTransfers.get(start);
+        for (var transfer : waiting) {
+            if (visited.contains(transfer)) continue;
+            visited.add(transfer);
+            if (target.equals(transfer.transfer.getSourceDeviceId())) {
+                waitingTransfers.get(start).remove(transfer);
+                var barrier = new CyclicBarrier(depth + 1);
+                transfer.barrier = barrier;
+                transfer.semaphore.release();
+                return barrier;
+            }
+            var barrier = walkCycle(transfer.transfer.getSourceDeviceId(), visited, depth + 1, target);
+            if (barrier != null) {
+                waitingTransfers.get(start).remove(transfer);
+                transfer.barrier = barrier;
+                transfer.semaphore.release();
+                return barrier;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * This function is called when we are woken up from a sleep from the queue.
+     */
+    private void onFrozenWake(FrozenTransfer ft) {
+        if (ft.barrier == null) {
+            // we were woken up, but left to ourselves
+            noDepend(ft.transfer);
+        } else {
+            // we have been woken up, either because we are in a cycle or because we are in a chain
+            performWBarrier(ft.transfer, ft.barrier, false);
+        }
+    }
+
+    /**
+     * This function performs the concurrent transfer.
+     */
+    private void performWBarrier(ComponentTransfer ct, CyclicBarrier barrier, boolean doMutex) {
+        waitBarrier(barrier);
+        ct.prepare();
+        waitBarrier(barrier);
+        ct.perform();
+        waitBarrier(barrier);
+        if (doMutex) mutexAcquire();
+        updatePosition(ct);
+        waitBarrier(barrier);
+        if (doMutex) mutex.release();
+    }
+
+    private void updatePosition(ComponentTransfer ct) {
+        var dst = ct.getDestinationDeviceId();
+        if (dst == null) {
+            componentPlacement.remove(ct.getComponentId());
+            isBusy.remove(ct.getComponentId());
+        } else {
+            componentPlacement.put(ct.getComponentId(), dst);
+            isBusy.get(ct.getComponentId()).set(false);
         }
     }
 
@@ -95,118 +251,19 @@ public class StorageSystemImpl implements StorageSystem {
         }
     }
 
-    private void moveChain(ComponentTransfer transfer) {
-        var barrier = chainBarrier(transfer.getSourceDeviceId(), 1);
-        if (barrier == null) {
-            // no transfers depend on this one
-            transfer.prepare();
-            transfer.perform(); // TODO: this could be done in parallel
-            moveOrDelete(transfer);
-        } else {
-            try {
-                barrier.await();
-            } catch (InterruptedException | BrokenBarrierException e) {
-                throw new RuntimeException("panic: unexpected thread interruption");
-            }
-            transfer.prepare();
-            try {
-                barrier.await();
-            } catch (InterruptedException | BrokenBarrierException e) {
-                throw new RuntimeException("panic: unexpected thread interruption");
-            }
-            transfer.perform();
-            try {
-                barrier.await();
-            } catch (InterruptedException | BrokenBarrierException e) {
-                throw new RuntimeException("panic: unexpected thread interruption");
-            }
-            moveOrDelete(transfer);
+    private void mutexAcquire() {
+        try {
+            mutex.acquire();
+        } catch (InterruptedException e) {
+            throw new RuntimeException("panic: unexpected thread interruption");
         }
     }
 
-    private void moveCycle(ComponentTransfer transfer) {
-        var dst = transfer.getDestinationDeviceId();
-        var src = transfer.getSourceDeviceId();
-        var ft = cycleDFSBarrier(src, new HashSet<>(), 1, dst);
-        if (ft == null) {
-            // no cycle, we have to wait for a free slot
-            ft = new FrozenTransfer(transfer, new Semaphore(0));
-            waitingTransfers.get(dst).add(ft);
-            mutex.release();
-            ft.semAcquire();
-            // we are now in the cycle or a chain
-            waitingTransfers.get(dst).remove(ft);
-            ft.barrierWait();
-            transfer.prepare();
-            ft.barrierWait();
-            transfer.perform();
-            ft.barrierWait();
-            componentPlacement.put(transfer.getComponentId(), dst);
-            // we dont update freeSlots, cuz another transfer took our slot
-            isBusy.remove(transfer.getComponentId());
-        } else {
-            mutex.release(); // we release the mutex, because we are the representative of the cycle
-            ft.barrierWait();
-            transfer.prepare();
-            ft.barrierWait();
-            transfer.perform();
-            ft.barrierWait();
-            componentPlacement.put(transfer.getComponentId(), dst);
-            isBusy.remove(transfer.getComponentId());
+    private static void waitBarrier(CyclicBarrier barrier) {
+        try {
+            barrier.await();
+        } catch (InterruptedException | BrokenBarrierException e) {
+            throw new RuntimeException("panic: unexpected thread interruption");
         }
-
-    }
-
-    private void moveOrDelete(ComponentTransfer transfer) {
-        var dst = transfer.getDestinationDeviceId();
-        freeSlots.computeIfPresent(transfer.getSourceDeviceId(), (k, v) -> v + 1);
-        if (dst == null) {
-            mutex.release();
-            componentPlacement.remove(transfer.getComponentId());
-            isBusy.remove(transfer.getComponentId());
-        } else {
-            freeSlots.computeIfPresent(dst, (k, v) -> v - 1);
-            mutex.release();
-            componentPlacement.put(transfer.getComponentId(), dst);
-            isBusy.remove(transfer.getComponentId());
-        }
-    }
-
-    private CyclicBarrier chainBarrier(DeviceId start, int depth) {
-        if (start == null) return null;
-        var transfer = waitingTransfers.get(start).peek();
-        if (transfer == null) return null;
-        var barrier = chainBarrier(transfer.transfer.getSourceDeviceId(), depth+1);
-        if (barrier == null) {
-            transfer.barrier = new CyclicBarrier(depth);
-            transfer.semaphore.release(); // wake up each thread in the cycle
-            freeSlots.computeIfPresent(transfer.transfer.getSourceDeviceId(), (k, v) -> v + 1);
-            return transfer.barrier;
-        } else {
-            transfer.barrier = barrier;
-            transfer.semaphore.release(); // wake up each thread in the cycle
-            return barrier;
-        }
-    }
-
-    private FrozenTransfer cycleDFSBarrier(DeviceId start, HashSet<FrozenTransfer> visited, int depth, DeviceId target) {
-        if (start == null) return null;
-        var waiting = waitingTransfers.get(start);
-        for (var transfer: waiting) {
-            if (visited.contains(transfer)) continue;
-            visited.add(transfer);
-            if (transfer.transfer.getSourceDeviceId().equals(target)) {
-                transfer.barrier = new CyclicBarrier(depth + 1);
-                transfer.semaphore.release(); // wake up each thread in the cycle
-                return transfer;
-            }
-            var res = cycleDFSBarrier(transfer.transfer.getSourceDeviceId(), visited, depth+1, target);
-            if (res != null) {
-                transfer.barrier = res.barrier;
-                transfer.semaphore.release(); // wake up each thread in the cycle
-                return res;
-            }
-        }
-        return null;
     }
 }

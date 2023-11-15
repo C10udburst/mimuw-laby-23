@@ -8,12 +8,15 @@ import java.util.concurrent.Semaphore;
 public class FrozenTransfer {
     public final ComponentTransfer transfer;
     public final Semaphore semaphore;
-    public CyclicBarrier barrier;
+    public CyclicBarrier barrier = null;
+    public Semaphore chainWait = null;
+    public Semaphore chainWake = null;
+
+    public boolean updateSrc = false;
 
     public FrozenTransfer(ComponentTransfer transfer, Semaphore semaphore) {
         this.transfer = transfer;
         this.semaphore = semaphore;
-        this.barrier = null;
     }
 
     public void semAcquire()  {

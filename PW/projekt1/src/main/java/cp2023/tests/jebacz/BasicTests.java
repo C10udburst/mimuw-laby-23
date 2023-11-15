@@ -5,8 +5,6 @@ import cp2023.base.StorageSystem;
 import cp2023.exceptions.TransferException;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.Semaphore;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class BasicTests extends Generators {
@@ -28,7 +26,7 @@ public class BasicTests extends Generators {
     void noOvertakes() throws InterruptedException {
         StorageSystem system = basicSystem2();
         UniqueCount callback = new UniqueCount();
-        ComponentTransfer transfer = transfer2(101, 1, -1);
+        ComponentTransfer transfer = transfer3(101, 1, -1);
         ComponentTransfer transfer2 = transfer(103, 1, -1);
         ComponentTransfer transfer3 = transfer4(102, 2, 1, callback);
 
@@ -50,7 +48,7 @@ public class BasicTests extends Generators {
         // Ta ilość czasu powinna wystarczyć do zakończenia się tego, co ma się zakończyć
         Thread.sleep(100);
 
-        assert (callback.result() == 1);
+        assertEquals (1, callback.result());
 
         // Możemy sobie przerwać wątki i o nich zapomnieć, test już sprawdził, co miał sprawdzić,
         // O ile nie jest to w pełni zgodnie z treścią, wszystkie wątki powinny się wtedy zakończyć.

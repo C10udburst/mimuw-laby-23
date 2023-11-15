@@ -156,8 +156,11 @@ public class CycleTests extends Generators {
         t3.start();
 
         t1.join();
+        System.out.println("t1 joined");
         t2.join();
+        System.out.println("t2 joined");
         t3.join();
+        System.out.println("t3 joined");
 
         t4.start();
         Thread.sleep(100);

@@ -93,9 +93,9 @@ public class StorageSystemImpl implements StorageSystem {
      */
     private void noDepend(ComponentTransfer transfer) {
         var src = transfer.getSourceDeviceId();
-        var barrier = walkChain(src, 1);
+        var childSem = walkChain(src);
         mutex.release();
-        if (barrier == null) {
+        if (childSem == null) {
             // we have not found a chain, we will transfer it by ourselves
             transfer.prepare();
             transfer.perform();
@@ -121,7 +121,7 @@ public class StorageSystemImpl implements StorageSystem {
 
         } else {
             // we found a chain, we will transfer it concurrently
-            performWBarrier(transfer, barrier, true);
+            performWSem(transfer, childSem, null, true, false);
         }
     }
 
@@ -153,7 +153,7 @@ public class StorageSystemImpl implements StorageSystem {
                 // we found a cycle, we will transfer it concurrently
                 mutex.release();
                 assert dst != null;
-                performWBarrier(transfer, barrier, true);
+                performWBarrier(transfer, barrier, true, false);
             }
         }
     }
@@ -161,18 +161,23 @@ public class StorageSystemImpl implements StorageSystem {
     /**
      * This function sets up a barrier for a chain and wakes all the components in the chain.
      */
-    private CyclicBarrier walkChain(DeviceId start, int depth) {
+    private Semaphore walkChain(DeviceId start) {
         if (start == null) return null;
         var transfer = waitingTransfers.get(start).poll();
         if (transfer == null) return null;
-        var barrier = walkChain(transfer.transfer.getSourceDeviceId(), depth + 1);
-        if (barrier == null) {
-            barrier = new CyclicBarrier(depth + 1);
-            freeSlots.computeIfPresent(transfer.transfer.getSourceDeviceId(), (k, v) -> v + 1); // we are moving the component away and no new component is coming
+        var sem = walkChain(transfer.transfer.getSourceDeviceId());
+        if (sem == null) {
+            sem = new Semaphore(0);
+            transfer.chainWait = sem;
+            transfer.semaphore.release();
+            return sem;
+        } else {
+            transfer.chainWake = sem;
+            sem = new Semaphore(0);
+            transfer.chainWait = sem;
+            transfer.semaphore.release();
+            return sem;
         }
-        transfer.barrier = barrier;
-        transfer.semaphore.release();
-        return barrier;
     }
 
 
@@ -209,27 +214,53 @@ public class StorageSystemImpl implements StorageSystem {
      * This function is called when we are woken up from a sleep from the queue.
      */
     private void onFrozenWake(FrozenTransfer ft) {
-        if (ft.barrier == null) {
+        if (ft.barrier != null) {
+            // we were woken up, because we are in a cycle
+            assert ft.chainWake == null && ft.chainWait == null;
+            performWBarrier(ft.transfer, ft.barrier, false, ft.updateSrc);
+        } else if (ft.chainWake != null && ft.chainWait != null) {
+            // we were woken up, because we are in a chain
+            performWSem(ft.transfer, ft.chainWake, ft.chainWait, false, ft.updateSrc);
+        } else {
             // we were woken up, but left to ourselves
             noDepend(ft.transfer);
-        } else {
-            // we have been woken up, either because we are in a cycle or because we are in a chain
-            performWBarrier(ft.transfer, ft.barrier, false);
         }
     }
 
     /**
      * This function performs the concurrent transfer.
      */
-    private void performWBarrier(ComponentTransfer ct, CyclicBarrier barrier, boolean doMutex) {
+    private void performWBarrier(ComponentTransfer ct, CyclicBarrier barrier, boolean doMutex, boolean updateSrc) {
         waitBarrier(barrier);
         ct.prepare();
         waitBarrier(barrier);
         ct.perform();
         waitBarrier(barrier);
-        if (doMutex) mutexAcquire();
+        if (doMutex)
+            mutexAcquire();
+        if (updateSrc)
+            freeSlots.computeIfPresent(ct.getSourceDeviceId(), (k, v) -> v + 1); // we are moving the component away and no new component is coming
         updatePosition(ct);
         waitBarrier(barrier);
+        if (doMutex) mutex.release();
+    }
+
+    private void performWSem(ComponentTransfer ct, Semaphore childSem, Semaphore waitSem, boolean doMutex, boolean updateSrc) {
+        waitSem(waitSem);
+        releaseSem(childSem);
+        ct.prepare();
+        waitSem(waitSem);
+        releaseSem(childSem);
+        ct.perform();
+        waitSem(waitSem);
+        releaseSem(childSem);
+        if (doMutex)
+            mutexAcquire();
+        if (updateSrc)
+            freeSlots.computeIfPresent(ct.getSourceDeviceId(), (k, v) -> v + 1); // we are moving the component away and no new component is coming
+        updatePosition(ct);
+        waitSem(waitSem);
+        releaseSem(childSem);
         if (doMutex) mutex.release();
     }
 
@@ -265,5 +296,19 @@ public class StorageSystemImpl implements StorageSystem {
         } catch (InterruptedException | BrokenBarrierException e) {
             throw new RuntimeException("panic: unexpected thread interruption");
         }
+    }
+
+    private static void waitSem(Semaphore sem) {
+        if (sem == null) return;
+        try {
+            sem.acquire();
+        } catch (InterruptedException e) {
+            throw new RuntimeException("panic: unexpected thread interruption");
+        }
+    }
+
+    private static void releaseSem(Semaphore sem) {
+        if (sem == null) return;
+        sem.release();
     }
 }

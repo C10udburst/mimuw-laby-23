@@ -87,191 +87,129 @@ public class StorageSystemImpl implements StorageSystem {
         }
     }
 
-    /**
-     * This function is called when our component has no dependencies.
-     * We perform a whole chain of transfers that start from our component, or we perform the transfer by ourselves.
-     */
-    private void noDepend(ComponentTransfer transfer) {
-        var src = transfer.getSourceDeviceId();
-        var childSem = walkChain(src);
-        mutex.release();
-        if (childSem == null) {
-            // we have not found a chain, we will transfer it by ourselves
-            transfer.prepare();
-            transfer.perform();
-            mutexAcquire();
-            if (src != null) {
-                var next = waitingTransfers.get(src).poll();
-                if (next != null) {
-                    // in the time we were performing the transfer, a new transfer appeared
-                    assert next.barrier == null;
-                    updatePosition(transfer);
-                    mutex.release();
-                    next.semaphore.release();
-                } else {
-                    // no new transfer appeared, we can release the slot
-                    freeSlots.computeIfPresent(src, (k, v) -> v + 1);
-                    updatePosition(transfer);
-                    mutex.release();
-                }
-            } else {
-                updatePosition(transfer);
-                mutex.release();
-            }
 
-        } else {
-            // we found a chain, we will transfer it concurrently
-            performWSem(transfer, childSem, null, true, false);
-        }
+    private void noDepend(ComponentTransfer ct) {
+        var childSem = wakeChain(ct.getSourceDeviceId());
+        mutex.release();
+        ct.prepare();
+        if (childSem == null)
+            freeSlot(ct.getSourceDeviceId());
+        else
+            childSem.release();
+        ct.perform();
+        mutexAcquire();
+        transferCompleted(ct);
+        mutex.release();
     }
 
-    /**
-     * This function is called when our component can't be transferred immediately.
-     * We either find a cycle and transfer it concurrently, or we sleep until we are woken up.
-     */
-    private void hasDepend(ComponentTransfer transfer) {
-        var src = transfer.getSourceDeviceId();
-        var dst = transfer.getDestinationDeviceId();
-        if (src == null) {
-            // we are creating a new component, there is no cycle, so we sleep
-            var ft = new FrozenTransfer(transfer, new Semaphore(0));
-            waitingTransfers.get(dst).add(ft);
+    private void hasDepend(ComponentTransfer ct) {
+        if (ct.getSourceDeviceId() == null) {
+            var ft = new FrozenTransfer(ct);
+            waitingTransfers.get(ct.getDestinationDeviceId()).add(ft);
             mutex.release();
-            ft.semAcquire();
+            ft.waitInQueue();
             onFrozenWake(ft);
         } else {
-            // we are moving a component
-            var barrier = walkCycle(src, new HashSet<>(), 1, dst);
-            if (barrier == null) {
-                // no cycle/chain exists yet, we sleep
-                var ft = new FrozenTransfer(transfer, new Semaphore(0));
-                waitingTransfers.get(dst).add(ft);
+            var parentSem = new Semaphore(0);
+            var childSem = wakeCycle(ct.getSourceDeviceId(), new HashSet<>(), ct.getDestinationDeviceId(), parentSem);
+            if (childSem == null) {
+                var ft = new FrozenTransfer(ct);
+                waitingTransfers.get(ct.getDestinationDeviceId()).add(ft);
                 mutex.release();
-                ft.semAcquire();
+                ft.waitInQueue();
                 onFrozenWake(ft);
             } else {
-                // we found a cycle, we will transfer it concurrently
                 mutex.release();
-                assert dst != null;
-                performWBarrier(transfer, barrier, true, false);
+                ct.prepare();
+                childSem.release();
+                try {
+                    parentSem.acquire();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException("panic: unexpected thread interruption");
+                }
+                ct.perform();
+                mutexAcquire();
+                transferCompleted(ct);
+                mutex.release();
             }
         }
     }
 
-    /**
-     * This function sets up a barrier for a chain and wakes all the components in the chain.
-     */
-    private Semaphore walkChain(DeviceId start) {
-        if (start == null) return null;
-        var transfer = waitingTransfers.get(start).poll();
-        if (transfer == null) return null;
-        var sem = walkChain(transfer.transfer.getSourceDeviceId());
-        if (sem == null) {
-            sem = new Semaphore(0);
-            transfer.chainWait = sem;
-            transfer.semaphore.release();
-            return sem;
+    private void onFrozenWake(FrozenTransfer ft) {
+        if (ft.parentSemaphore == null) {
+            noDepend(ft.transfer);
         } else {
-            transfer.chainWake = sem;
-            sem = new Semaphore(0);
-            transfer.chainWait = sem;
-            transfer.semaphore.release();
-            return sem;
+            ft.transfer.prepare();
+            if (ft.childSemaphore != null)
+                ft.childSemaphore.release();
+            else
+                freeSlot(ft.transfer.getSourceDeviceId());
+            ft.waitForParent();
+            ft.transfer.perform();
+            mutexAcquire();
+            transferCompleted(ft.transfer);
+            mutex.release();
         }
     }
 
+    private Semaphore wakeChain(DeviceId start) {
+        if (start == null) return null;
+        var ft = waitingTransfers.get(start).poll();
+        if (ft == null) return null;
+        var sem = wakeChain(ft.transfer.getSourceDeviceId());
+        if (sem != null)
+            ft.childSemaphore = sem;
+        sem = new Semaphore(0);
+        ft.parentSemaphore = sem;
+        ft.queueLeft.release();
+        return sem;
+    }
 
-    /**
-     * This function finds a cycle and sets up a barrier for it and wakes all the components in the cycle.
-     * Or it returns null if no cycle exists.
-     */
-    private CyclicBarrier walkCycle(DeviceId start, HashSet<FrozenTransfer> visited, int depth, DeviceId target) {
+    private Semaphore wakeCycle(DeviceId start, HashSet<FrozenTransfer> visited, DeviceId target, Semaphore startSem) {
         assert target != null;
         if (start == null) return null;
-        var waiting = waitingTransfers.get(start);
-        for (var transfer : waiting) {
-            if (visited.contains(transfer)) continue;
-            visited.add(transfer);
-            if (target.equals(transfer.transfer.getSourceDeviceId())) {
-                waitingTransfers.get(start).remove(transfer);
-                var barrier = new CyclicBarrier(depth + 1);
-                transfer.barrier = barrier;
-                transfer.semaphore.release();
-                return barrier;
+        for (var ft: waitingTransfers.get(start)) {
+            if (visited.contains(ft)) continue;
+            visited.add(ft);
+            if (target.equals(ft.transfer.getSourceDeviceId())) {
+                waitingTransfers.get(start).remove(ft);
+                ft.childSemaphore = startSem;
+                ft.parentSemaphore = new Semaphore(0);
+                ft.queueLeft.release();
+                return ft.parentSemaphore;
             }
-            var barrier = walkCycle(transfer.transfer.getSourceDeviceId(), visited, depth + 1, target);
-            if (barrier != null) {
-                waitingTransfers.get(start).remove(transfer);
-                transfer.barrier = barrier;
-                transfer.semaphore.release();
-                return barrier;
+            var childSem = wakeCycle(ft.transfer.getSourceDeviceId(), visited, target, startSem);
+            if (childSem != null) {
+                waitingTransfers.get(start).remove(ft);
+                ft.childSemaphore = childSem;
+                ft.parentSemaphore = new Semaphore(0);
+                ft.queueLeft.release();
+                return ft.parentSemaphore;
             }
         }
         return null;
     }
 
-    /**
-     * This function is called when we are woken up from a sleep from the queue.
-     */
-    private void onFrozenWake(FrozenTransfer ft) {
-        if (ft.barrier != null) {
-            // we were woken up, because we are in a cycle
-            assert ft.chainWake == null && ft.chainWait == null;
-            performWBarrier(ft.transfer, ft.barrier, false, ft.updateSrc);
-        } else if (ft.chainWake != null && ft.chainWait != null) {
-            // we were woken up, because we are in a chain
-            performWSem(ft.transfer, ft.chainWake, ft.chainWait, false, ft.updateSrc);
+    private void freeSlot(DeviceId device) {
+        if (device == null) return;
+        mutexAcquire();
+        var ft = waitingTransfers.get(device).poll();
+        if (ft == null) {
+            freeSlots.computeIfPresent(device, (k, v) -> v + 1);
         } else {
-            // we were woken up, but left to ourselves
-            noDepend(ft.transfer);
+            ft.queueLeft.release();
         }
+        mutex.release();
     }
 
-    /**
-     * This function performs the concurrent transfer.
-     */
-    private void performWBarrier(ComponentTransfer ct, CyclicBarrier barrier, boolean doMutex, boolean updateSrc) {
-        waitBarrier(barrier);
-        ct.prepare();
-        waitBarrier(barrier);
-        ct.perform();
-        waitBarrier(barrier);
-        if (doMutex)
-            mutexAcquire();
-        if (updateSrc)
-            freeSlots.computeIfPresent(ct.getSourceDeviceId(), (k, v) -> v + 1); // we are moving the component away and no new component is coming
-        updatePosition(ct);
-        waitBarrier(barrier);
-        if (doMutex) mutex.release();
-    }
-
-    private void performWSem(ComponentTransfer ct, Semaphore childSem, Semaphore waitSem, boolean doMutex, boolean updateSrc) {
-        waitSem(waitSem);
-        releaseSem(childSem);
-        ct.prepare();
-        waitSem(waitSem);
-        releaseSem(childSem);
-        ct.perform();
-        waitSem(waitSem);
-        releaseSem(childSem);
-        if (doMutex)
-            mutexAcquire();
-        if (updateSrc)
-            freeSlots.computeIfPresent(ct.getSourceDeviceId(), (k, v) -> v + 1); // we are moving the component away and no new component is coming
-        updatePosition(ct);
-        waitSem(waitSem);
-        releaseSem(childSem);
-        if (doMutex) mutex.release();
-    }
-
-    private void updatePosition(ComponentTransfer ct) {
+    private void transferCompleted(ComponentTransfer ct) {
         var dst = ct.getDestinationDeviceId();
         if (dst == null) {
             componentPlacement.remove(ct.getComponentId());
             isBusy.remove(ct.getComponentId());
         } else {
             componentPlacement.put(ct.getComponentId(), dst);
-            isBusy.get(ct.getComponentId()).set(false);
+            isBusy.remove(ct.getComponentId());
         }
     }
 
@@ -288,27 +226,5 @@ public class StorageSystemImpl implements StorageSystem {
         } catch (InterruptedException e) {
             throw new RuntimeException("panic: unexpected thread interruption");
         }
-    }
-
-    private static void waitBarrier(CyclicBarrier barrier) {
-        try {
-            barrier.await();
-        } catch (InterruptedException | BrokenBarrierException e) {
-            throw new RuntimeException("panic: unexpected thread interruption");
-        }
-    }
-
-    private static void waitSem(Semaphore sem) {
-        if (sem == null) return;
-        try {
-            sem.acquire();
-        } catch (InterruptedException e) {
-            throw new RuntimeException("panic: unexpected thread interruption");
-        }
-    }
-
-    private static void releaseSem(Semaphore sem) {
-        if (sem == null) return;
-        sem.release();
     }
 }

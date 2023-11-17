@@ -7,21 +7,28 @@ import java.util.concurrent.Semaphore;
 
 public class FrozenTransfer {
     public final ComponentTransfer transfer;
-    public final Semaphore semaphore;
-    public CyclicBarrier barrier = null;
-    public Semaphore chainWait = null;
-    public Semaphore chainWake = null;
 
-    public boolean updateSrc = false;
+    // semaphore to signal that we were woken up from the waiting process'es queue
+    public final Semaphore queueLeft = new Semaphore(0);
 
-    public FrozenTransfer(ComponentTransfer transfer, Semaphore semaphore) {
+    public Semaphore parentSemaphore = null;
+    public Semaphore childSemaphore = null;
+
+    public FrozenTransfer(ComponentTransfer transfer) {
         this.transfer = transfer;
-        this.semaphore = semaphore;
     }
 
-    public void semAcquire()  {
+    public void waitInQueue()  {
         try {
-            semaphore.acquire();
+            queueLeft.acquire();
+        } catch (InterruptedException e) {
+            throw new RuntimeException("panic: unexpected thread interruption");
+        }
+    }
+
+    public void waitForParent() {
+        try {
+            parentSemaphore.acquire();
         } catch (InterruptedException e) {
             throw new RuntimeException("panic: unexpected thread interruption");
         }

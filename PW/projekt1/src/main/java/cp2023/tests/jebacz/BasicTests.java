@@ -26,7 +26,7 @@ public class BasicTests extends Generators {
     void noOvertakes() throws InterruptedException {
         StorageSystem system = basicSystem2();
         UniqueCount callback = new UniqueCount();
-        ComponentTransfer transfer = transfer3(101, 1, -1);
+        ComponentTransfer transfer = transfer2(101, 1, -1);
         ComponentTransfer transfer2 = transfer(103, 1, -1);
         ComponentTransfer transfer3 = transfer4(102, 2, 1, callback);
 

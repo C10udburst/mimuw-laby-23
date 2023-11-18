@@ -18,14 +18,17 @@ public class StorageSystemImpl implements StorageSystem {
     private final ConcurrentHashMap<ComponentId, AtomicBoolean> isBusy;
     private final ConcurrentHashMap<ComponentId, DeviceId> componentPlacement;
     private final ConcurrentHashMap<DeviceId, ConcurrentLinkedDeque<FrozenTransfer>> waitingTransfers;
+    private final ConcurrentHashMap<DeviceId, ConcurrentLinkedDeque<WorkingTransfer>> workingTransfers;
     private final Semaphore mutex = new Semaphore(1);
 
     public StorageSystemImpl(Map<DeviceId, Integer> deviceTotalSlots, Map<ComponentId, DeviceId> componentPlacement) {
         this.freeSlots = new HashMap<>(deviceTotalSlots);
         this.waitingTransfers = new ConcurrentHashMap<>();
+        this.workingTransfers = new ConcurrentHashMap<>();
         this.isBusy = new ConcurrentHashMap<>();
         for (var dev: deviceTotalSlots.keySet()) {
             this.waitingTransfers.put(dev, new ConcurrentLinkedDeque<>());
+            this.workingTransfers.put(dev, new ConcurrentLinkedDeque<>());
         }
         this.componentPlacement = new ConcurrentHashMap<>(componentPlacement);
         for (var component : componentPlacement.keySet()) {
@@ -90,16 +93,21 @@ public class StorageSystemImpl implements StorageSystem {
 
     private void noDepend(ComponentTransfer ct) {
         var childSem = wakeChain(ct.getSourceDeviceId());
+        var wt = new WorkingTransfer();
+        if (childSem == null && ct.getSourceDeviceId() != null) {
+            workingTransfers.get(ct.getSourceDeviceId()).add(wt);
+        }
         mutex.release();
         ct.prepare();
-        if (childSem == null)
-            freeSlot(ct.getSourceDeviceId());
-        else
+        if (childSem == null) {
+            if (wt.childSemaphore != null)
+                wt.childSemaphore.release();
+            else
+                freeSlot(ct.getSourceDeviceId());
+        } else
             childSem.release();
         ct.perform();
-        mutexAcquire();
         transferCompleted(ct);
-        mutex.release();
     }
 
     private void hasDepend(ComponentTransfer ct) {
@@ -111,26 +119,41 @@ public class StorageSystemImpl implements StorageSystem {
             onFrozenWake(ft);
         } else {
             var parentSem = new Semaphore(0);
-            var childSem = wakeCycle(ct.getSourceDeviceId(), new HashSet<>(), ct.getDestinationDeviceId(), parentSem);
-            if (childSem == null) {
-                var ft = new FrozenTransfer(ct);
-                waitingTransfers.get(ct.getDestinationDeviceId()).add(ft);
-                mutex.release();
-                ft.waitInQueue();
-                onFrozenWake(ft);
-            } else {
+            var wt = workingTransfers.get(ct.getDestinationDeviceId()).poll();
+            if (wt != null) {
+                wt.childSemaphore = parentSem;
+                var myWt = new WorkingTransfer();
+                if (ct.getSourceDeviceId() != null)
+                    workingTransfers.get(ct.getSourceDeviceId()).add(myWt);
                 mutex.release();
                 ct.prepare();
-                childSem.release();
-                try {
-                    parentSem.acquire();
-                } catch (InterruptedException e) {
-                    throw new RuntimeException("panic: unexpected thread interruption");
-                }
+                wt.waitForPerform();
+                if (myWt.childSemaphore != null)
+                    myWt.childSemaphore.release();
+                else
+                    freeSlot(ct.getSourceDeviceId());
                 ct.perform();
-                mutexAcquire();
                 transferCompleted(ct);
-                mutex.release();
+            } else {
+                var childSem = wakeCycle(ct.getSourceDeviceId(), new HashSet<>(), ct.getDestinationDeviceId(), parentSem);
+                if (childSem == null) {
+                    var ft = new FrozenTransfer(ct);
+                    waitingTransfers.get(ct.getDestinationDeviceId()).add(ft);
+                    mutex.release();
+                    ft.waitInQueue();
+                    onFrozenWake(ft);
+                } else {
+                    mutex.release();
+                    ct.prepare();
+                    childSem.release();
+                    try {
+                        parentSem.acquire();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException("panic: unexpected thread interruption");
+                    }
+                    ct.perform();
+                    transferCompleted(ct);
+                }
             }
         }
     }
@@ -139,16 +162,22 @@ public class StorageSystemImpl implements StorageSystem {
         if (ft.parentSemaphore == null) {
             noDepend(ft.transfer);
         } else {
+            var wt = new WorkingTransfer();
+            if (ft.transfer.getSourceDeviceId() != null && ft.childSemaphore == null) {
+                mutexAcquire();
+                workingTransfers.get(ft.transfer.getSourceDeviceId()).add(wt);
+                mutex.release();
+            }
             ft.transfer.prepare();
             if (ft.childSemaphore != null)
                 ft.childSemaphore.release();
+            else if (wt.childSemaphore != null)
+                wt.childSemaphore.release();
             else
                 freeSlot(ft.transfer.getSourceDeviceId());
             ft.waitForParent();
             ft.transfer.perform();
-            mutexAcquire();
             transferCompleted(ft.transfer);
-            mutex.release();
         }
     }
 
@@ -203,6 +232,7 @@ public class StorageSystemImpl implements StorageSystem {
     }
 
     private void transferCompleted(ComponentTransfer ct) {
+        mutexAcquire();
         var dst = ct.getDestinationDeviceId();
         if (dst == null) {
             componentPlacement.remove(ct.getComponentId());
@@ -211,6 +241,7 @@ public class StorageSystemImpl implements StorageSystem {
             componentPlacement.put(ct.getComponentId(), dst);
             isBusy.remove(ct.getComponentId());
         }
+        mutex.release();
     }
 
     private void checkDevice(DeviceId device) throws TransferException {

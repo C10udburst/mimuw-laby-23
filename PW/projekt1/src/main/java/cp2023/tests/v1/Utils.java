@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class Utils {
 
     public static void assertComponentOnDevice(StorageSystem system, ComponentId component, DeviceId device) {
+        //if (system != null) return;
         // ugly reflection, assumes that there will exist a field of type HashMap<ComponentId, DeviceId> in StorageSystem
         for (var field: system.getClass().getDeclaredFields()) {
             try {

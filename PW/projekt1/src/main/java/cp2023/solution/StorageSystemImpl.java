@@ -55,30 +55,32 @@ public class StorageSystemImpl implements StorageSystem {
         checkDevice(src);
         checkDevice(dst);
 
-        mutexAcquire(); // maybe we could do it after the 4 checks, but this guarantees that there isn't a weird configuration that breaks the system
+        mutexAcquire();
 
         if (src == null && componentPlacement.containsKey(transfer.getComponentId())) {
+            mutex.release();
             throw new ComponentAlreadyExists(transfer.getComponentId(), componentPlacement.get(transfer.getComponentId()));
         }
 
         var currentSrc = componentPlacement.getOrDefault(transfer.getComponentId(), null);
 
         if ((currentSrc != null && !currentSrc.equals(src)) || (currentSrc == null && src != null)) {
-            assert src != null; // src == null => componentPlacement[transfer.getComponentId()] == null (the previous if)
+            //assert src != null; // src == null => componentPlacement[transfer.getComponentId()] == null (the previous if)
+            mutex.release();
             throw new ComponentDoesNotExist(transfer.getComponentId(), src);
         }
 
         if (src != null && src.equals(dst)) {
+            mutex.release();
             throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), src);
         }
 
         if (isBusy
                 .computeIfAbsent(transfer.getComponentId(), k -> new AtomicBoolean(false))
                 .getAndSet(true)) {
+            mutex.release();
             throw new ComponentIsBeingOperatedOn(transfer.getComponentId());
         }
-
-        // mutexAcquire();
 
         if (dst == null) {
             noDepend(transfer);
@@ -107,7 +109,11 @@ public class StorageSystemImpl implements StorageSystem {
         } else
             childSem.release();
         ct.perform();
+        mutexAcquire();
+        if (ct.getSourceDeviceId() != null)
+            workingTransfers.get(ct.getSourceDeviceId()).remove(wt);
         transferCompleted(ct);
+        mutex.release();
     }
 
     private void hasDepend(ComponentTransfer ct) {
@@ -117,6 +123,7 @@ public class StorageSystemImpl implements StorageSystem {
             mutex.release();
             ft.waitInQueue();
             onFrozenWake(ft);
+
         } else {
             var parentSem = new Semaphore(0);
             var wt = workingTransfers.get(ct.getDestinationDeviceId()).poll();
@@ -133,7 +140,11 @@ public class StorageSystemImpl implements StorageSystem {
                 else
                     freeSlot(ct.getSourceDeviceId());
                 ct.perform();
+                mutexAcquire();
+                if (ct.getSourceDeviceId() != null)
+                    workingTransfers.get(ct.getSourceDeviceId()).remove(myWt);
                 transferCompleted(ct);
+                mutex.release();
             } else {
                 var childSem = wakeCycle(ct.getSourceDeviceId(), new HashSet<>(), ct.getDestinationDeviceId(), parentSem);
                 if (childSem == null) {
@@ -152,7 +163,9 @@ public class StorageSystemImpl implements StorageSystem {
                         throw new RuntimeException("panic: unexpected thread interruption");
                     }
                     ct.perform();
+                    mutexAcquire();
                     transferCompleted(ct);
+                    mutex.release();
                 }
             }
         }
@@ -177,7 +190,11 @@ public class StorageSystemImpl implements StorageSystem {
                 freeSlot(ft.transfer.getSourceDeviceId());
             ft.waitForParent();
             ft.transfer.perform();
+            mutexAcquire();
+            if (ft.transfer.getSourceDeviceId() != null)
+                workingTransfers.get(ft.transfer.getSourceDeviceId()).remove(wt);
             transferCompleted(ft.transfer);
+            mutex.release();
         }
     }
 
@@ -232,7 +249,6 @@ public class StorageSystemImpl implements StorageSystem {
     }
 
     private void transferCompleted(ComponentTransfer ct) {
-        mutexAcquire();
         var dst = ct.getDestinationDeviceId();
         if (dst == null) {
             componentPlacement.remove(ct.getComponentId());
@@ -241,7 +257,6 @@ public class StorageSystemImpl implements StorageSystem {
             componentPlacement.put(ct.getComponentId(), dst);
             isBusy.remove(ct.getComponentId());
         }
-        mutex.release();
     }
 
     private void checkDevice(DeviceId device) throws TransferException {

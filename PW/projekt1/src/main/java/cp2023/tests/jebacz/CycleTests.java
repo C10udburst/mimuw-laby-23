@@ -134,13 +134,14 @@ public class CycleTests extends Generators {
     void CycleUsesValidEdge() throws InterruptedException {
         StorageSystem system = basicSystem3(2);
         UniqueCount expected = new UniqueCount();
+        CallbackLogger cb = new CallbackLogger(expected);
 
         ComponentTransfer transfer1 = transfer(101, 1, 2);
         ComponentTransfer transfer2 = transfer(102, 2, -1);
         ComponentTransfer transfer3 = transfer(301, -1, 1);
 
-        ComponentTransfer transfer4 = transfer4(201, 1, 2, expected);
-        ComponentTransfer transfer5 = transfer4(202, 2, 1, expected);
+        ComponentTransfer transfer4 = transfer4(201, 1, 2, cb);
+        ComponentTransfer transfer5 = transfer4(202, 2, 1, cb);
 
         Thread t1 = new Thread(() -> execTransfer(system, transfer1));
         Thread t2 = new Thread(() -> execTransfer(system, transfer2));
@@ -168,8 +169,7 @@ public class CycleTests extends Generators {
         t5.start();
         Thread.sleep(100);
 
-
-        assert (expected.result() == 4);
+        assertEquals(4, expected.result());
         t4.interrupt();
         t5.interrupt();
     }

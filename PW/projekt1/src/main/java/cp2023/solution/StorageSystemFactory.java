@@ -8,14 +8,10 @@
 package cp2023.solution;
 
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import cp2023.base.ComponentId;
 import cp2023.base.DeviceId;
 import cp2023.base.StorageSystem;
-import cp2023.exceptions.TransferException;
 
 
 public final class StorageSystemFactory {
@@ -31,6 +27,9 @@ public final class StorageSystemFactory {
     private static void validateDeviceTotalSlots(Map<DeviceId, Integer> deviceTotalSlots) {
         if (deviceTotalSlots == null) {
             throw new IllegalArgumentException("Device total slots cannot be null.");
+        }
+        if (deviceTotalSlots.isEmpty()) {
+            throw new IllegalArgumentException("Device total slots cannot be empty.");
         }
         for (var entry : deviceTotalSlots.entrySet()) {
             if (entry.getKey() == null) {

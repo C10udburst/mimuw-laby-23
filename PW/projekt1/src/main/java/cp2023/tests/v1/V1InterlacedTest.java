@@ -64,7 +64,7 @@ public class V1InterlacedTest {
         }
     }
 
-    @RepeatedTest(value=5, name = "cycleShrimple {currentRepetition}/{totalRepetitions}")
+    @RepeatedTest(value=6, name = "cycleShrimple {currentRepetition}/{totalRepetitions}")
     public void cycleShrimple(RepetitionInfo ri) {
         var semaphores = List.of(new Semaphore(0), new Semaphore(0), new Semaphore(0));
         List<ComponentTransfer> transfers = List.of(
@@ -105,7 +105,7 @@ public class V1InterlacedTest {
         assertComponentOnDevice(system, new ComponentId(3), new DeviceId(1));
     }
 
-    @RepeatedTest(value=5, name = "simpleSingleDevice {currentRepetition}/{totalRepetitions}")
+    @RepeatedTest(value=6, name = "simpleSingleDevice {currentRepetition}/{totalRepetitions}")
     public void simpleSingleDevice(RepetitionInfo ri) {
         var semaphores = List.of(new Semaphore(0), new Semaphore(0), new Semaphore(0));
         List<ComponentTransfer> transfers = List.of(

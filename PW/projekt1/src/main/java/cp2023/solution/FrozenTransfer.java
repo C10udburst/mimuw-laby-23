@@ -2,7 +2,6 @@ package cp2023.solution;
 
 import cp2023.base.ComponentTransfer;
 
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Semaphore;
 
 public class FrozenTransfer {

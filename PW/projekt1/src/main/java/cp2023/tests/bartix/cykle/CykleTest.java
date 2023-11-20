@@ -1,17 +1,26 @@
 package cp2023.tests.bartix.cykle;
 
-import org.junit.jupiter.api.Test;
+import cp2023.tests.bartix.better.Testy2;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.RepetitionInfo;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 public class CykleTest {
-    @Test
-    public void test() throws InterruptedException {
+
+    @Execution(ExecutionMode.CONCURRENT)
+    @RepeatedTest(value = 15, name = "Test{currentRepetition}")
+    public void test(RepetitionInfo ri) throws InterruptedException {
         var t = new Thread(() -> {
-            assertDoesNotThrow(() -> TestyWspobieznie.main(new String[]{}));
+            assertDoesNotThrow(() -> TestyWspobieznie.main(ri.getCurrentRepetition()));
         });
         t.start();
-        Thread.sleep(10_000);
+        for (int i = 0; i < 5; i++) {
+            if (t.isAlive()) Thread.sleep(1000);
+            else break;
+        }
         assert(!t.isAlive());
         t.interrupt();
     }

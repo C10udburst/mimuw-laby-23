@@ -6,10 +6,12 @@ import cp2023.base.DeviceId;
 import cp2023.base.StorageSystem;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -91,6 +93,12 @@ public class Utils {
                 } catch (Exception e) {
                     if (e.getMessage().equals("panic: unexpected thread interruption")) {
                         System.out.println("interrupted threads: " + interruptions.incrementAndGet());
+                        System.out.println("Interrupted @: " + Arrays.stream(e.getStackTrace())
+                                .filter(s -> s.getClassName().startsWith("cp2023"))
+                                .map(s -> String.format("%s:%d", s.getFileName(), s.getLineNumber()))
+                                .collect(Collectors.joining(" ")))
+                        ;
+
                         latch.countDown();
                     } else {
                         e.printStackTrace();

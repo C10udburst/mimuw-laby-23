@@ -6,6 +6,8 @@ import cp2023.base.DeviceId;
 import cp2023.solution.StorageSystemFactory;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.RepetitionInfo;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
 import java.util.List;
 import java.util.Map;
@@ -64,6 +66,7 @@ public class V1InterlacedTest {
         }
     }
 
+    @Execution(ExecutionMode.CONCURRENT)
     @RepeatedTest(value=6, name = "cycleShrimple {currentRepetition}/{totalRepetitions}")
     public void cycleShrimple(RepetitionInfo ri) {
         var semaphores = List.of(new Semaphore(0), new Semaphore(0), new Semaphore(0));
@@ -105,6 +108,7 @@ public class V1InterlacedTest {
         assertComponentOnDevice(system, new ComponentId(3), new DeviceId(1));
     }
 
+    @Execution(ExecutionMode.CONCURRENT)
     @RepeatedTest(value=6, name = "simpleSingleDevice {currentRepetition}/{totalRepetitions}")
     public void simpleSingleDevice(RepetitionInfo ri) {
         var semaphores = List.of(new Semaphore(0), new Semaphore(0), new Semaphore(0));

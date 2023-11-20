@@ -17,12 +17,10 @@ import java.util.Collection;
 import java.util.HashMap;
 
 public class Testy2 {
-    public static void main(String[] args) {
-        for(int i = 1; i <= 15; i++){
-            StorageSystem system = setupSystem();
-            Collection<Thread> users = setupTransferers(system, i);
-            runTransferers(users);
-        }
+    public static void main(int i) {
+        StorageSystem system = setupSystem();
+        Collection<Thread> users = setupTransferers(system, i);
+        runTransferers(users);
     }
 
     private final static StorageSystem setupSystem() {

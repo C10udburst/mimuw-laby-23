@@ -5,9 +5,7 @@ import java.util.concurrent.Semaphore;
 public class WorkingTransfer {
     public Semaphore childSemaphore;
 
-    public WorkingTransfer() {
-
-    }
+    public WorkingTransfer() { }
 
     public void waitForPerform() {
         try {

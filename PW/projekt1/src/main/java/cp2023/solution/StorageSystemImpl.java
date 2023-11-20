@@ -101,39 +101,45 @@ public class StorageSystemImpl implements StorageSystem {
         var childSem = wakeChain(ct.getSourceDeviceId());
         var wt = new WorkingTransfer();
         if (childSem == null && ct.getSourceDeviceId() != null) {
+            // no chain, so we allow threads to reserve spot after us
             workingTransfers.get(ct.getSourceDeviceId()).add(wt);
         }
         mutexRelease();
         ct.prepare();
         if (childSem == null) {
+            // no chain, we free spot after us
             mutexAcquire();
             freeSlot(ct.getSourceDeviceId(), wt);
         } else
-            childSem.release();
+            childSem.release(); // we release the chain
         ct.perform();
         mutexAcquire();
+        // we update the state
         transferCompleted(ct);
         mutexRelease();
     }
 
     private void hasDepend(ComponentTransfer ct) {
+        // we assume we have mutex
         if (ct.getSourceDeviceId() == null) {
+            // no src, therefore impossible to have a cycle
             var ft = new FrozenTransfer(ct);
             waitingTransfers.get(ct.getDestinationDeviceId()).add(ft);
             mutexRelease();
-            ft.waitInQueue();
+            ft.waitInQueue(); // we wait for the transfer to be woken up
             onFrozenWake(ft);
         } else {
             var parentSem = new Semaphore(0);
             var wt = workingTransfers.get(ct.getDestinationDeviceId()).poll();
             if (wt != null) {
+                // we have successfully reserved a spot
                 wt.childSemaphore = parentSem;
                 var myWt = new WorkingTransfer();
                 if (ct.getSourceDeviceId() != null)
                     workingTransfers.get(ct.getSourceDeviceId()).add(myWt);
                 mutexRelease();
                 ct.prepare();
-                wt.waitForPerform();
+                wt.waitForPerform(); // we wait for the parent transfer to perform
                 mutexAcquire();
                 freeSlot(ct.getSourceDeviceId(), myWt);
                 ct.perform();
@@ -141,19 +147,22 @@ public class StorageSystemImpl implements StorageSystem {
                 transferCompleted(ct);
                 mutexRelease();
             } else {
+                // no free spot, we need to find a cycle
                 var childSem = wakeCycle(ct.getSourceDeviceId(), new HashSet<>(), ct.getDestinationDeviceId(), parentSem);
                 if (childSem == null) {
+                    // no cycle, we need to wait
                     var ft = new FrozenTransfer(ct);
                     waitingTransfers.get(ct.getDestinationDeviceId()).add(ft);
                     mutexRelease();
                     ft.waitInQueue();
                     onFrozenWake(ft);
                 } else {
+                    // we found a cycle, we can execute
                     mutexRelease();
                     ct.prepare();
-                    childSem.release();
+                    childSem.release(); // our dependant can start performing
                     try {
-                        parentSem.acquire();
+                        parentSem.acquire(); // our parent has prepared, we can start performing
                     } catch (InterruptedException e) {
                         throw new RuntimeException("panic: unexpected thread interruption");
                     }
@@ -167,10 +176,13 @@ public class StorageSystemImpl implements StorageSystem {
     }
 
     private void onFrozenWake(FrozenTransfer ft) {
+        // we dont have mutex
         if (ft.parentSemaphore == null) {
+            // no parent, but we were woken up, so someone reserved a spot for us
             mutexAcquire();
             noDepend(ft.transfer);
         } else {
+            // we have a parent, we need to wait for it to prepare, to start performing
             var wt = new WorkingTransfer();
             if (ft.transfer.getSourceDeviceId() != null && ft.childSemaphore == null) {
                 mutexAcquire();

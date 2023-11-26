@@ -4,6 +4,10 @@
         "*.json5": "jsonc",
         "err.h": "c",
         "unistd.h": "c",
-        "pipeline-utils.h": "c"
+        "pipeline-utils.h": "c",
+        "hash_map": "cpp",
+        "bitset": "cpp",
+        "format": "cpp",
+        "random": "cpp"
     }
 }

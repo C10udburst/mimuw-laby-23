@@ -8,6 +8,18 @@
         "hash_map": "cpp",
         "bitset": "cpp",
         "format": "cpp",
-        "random": "cpp"
+        "random": "cpp",
+        "vector": "cpp",
+        "tuple": "cpp",
+        "iostream": "cpp",
+        "*.tcc": "cpp",
+        "deque": "cpp",
+        "list": "cpp",
+        "string": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp",
+        "array": "cpp",
+        "variant": "cpp",
+        "complex": "cpp"
     }
 }

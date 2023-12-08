@@ -20,6 +20,9 @@
         "unordered_set": "cpp",
         "array": "cpp",
         "variant": "cpp",
-        "complex": "cpp"
+        "complex": "cpp",
+        "limits": "cpp",
+        "chrono": "cpp",
+        "span": "cpp"
     }
 }

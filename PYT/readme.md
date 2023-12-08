@@ -7,7 +7,6 @@
 | editing-dist.ipynb | &check; | &check; | &check; |
 | anagramy.ipynb | &check; | &check; | &check; |
 | cosmetic.py | &cross; | &cross; | &cross; |
-
-sortowanie duzego json [{"klucz": "wartosc"}, {"klucz": "wartosc"}] po wartosciach klucza (nie miesci sie w ramie )
-symulacja żyjątek, wykazać ze nieśmiertelność jest ewolucyjnie niekorzystna (domyślnie są nieśmiertelne)
-ułamek 2
+| clean.py | &cross; | &cross; | &cross; |
+| sortowanie.py | &cross; | &cross; | &cross; |
+| symulacja.ipynb | &cross; | &cross; | &cross; |

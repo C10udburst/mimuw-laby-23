@@ -23,6 +23,7 @@
         "complex": "cpp",
         "limits": "cpp",
         "chrono": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "cmath": "cpp"
     }
 }

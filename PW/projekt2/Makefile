@@ -26,3 +26,6 @@ assignment.zip: $(CHANGED_FILES)
 
 clean:
 	rm -rf mimpirun assignment.zip examples_build
+
+repl: repl.c $(MIMPI_SRC)
+	gcc $(CFLAGS) -o $@ $(filter %.c,$^)

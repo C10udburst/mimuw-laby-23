@@ -2,28 +2,40 @@
  * This file is for implementation of MIMPI library.
  * */
 
+#include <stdlib.h>
+#include <stdio.h>
 #include "channel.h"
 #include "mimpi.h"
 #include "mimpi_common.h"
 
+struct {
+    int rank;
+    int size;
+} global;
+
 void MIMPI_Init(bool enable_deadlock_detection) {
     channels_init();
 
-    TODO
+    char* n_str = getenv("MIMPI_N");
+    char* rank_str = getenv("MIMPI_RANK");
+    global.rank = atoi(rank_str);
+    global.size = atoi(n_str);
+
+    // TODO
 }
 
 void MIMPI_Finalize() {
-    TODO
+    // TODO
 
     channels_finalize();
 }
 
 int MIMPI_World_size() {
-    TODO
+    return global.size;
 }
 
 int MIMPI_World_rank() {
-    TODO
+    return global.rank;
 }
 
 MIMPI_Retcode MIMPI_Send(
@@ -32,7 +44,11 @@ MIMPI_Retcode MIMPI_Send(
     int destination,
     int tag
 ) {
-    TODO
+    if (destination == MIMPI_World_rank()) 
+        return MIMPI_ERROR_ATTEMPTED_SELF_OP;
+    if (destination < 0 || destination >= MIMPI_World_size())
+        return MIMPI_ERROR_NO_SUCH_RANK;
+    return MIMPI_SUCCESS;
 }
 
 MIMPI_Retcode MIMPI_Recv(
@@ -41,11 +57,15 @@ MIMPI_Retcode MIMPI_Recv(
     int source,
     int tag
 ) {
-    TODO
+    if (source == MIMPI_World_rank())
+        return MIMPI_ERROR_ATTEMPTED_SELF_OP;
+    if (source < 0 || source >= MIMPI_World_size())
+        return MIMPI_ERROR_NO_SUCH_RANK;
+    return MIMPI_SUCCESS;
 }
 
 MIMPI_Retcode MIMPI_Barrier() {
-    TODO
+    return MIMPI_SUCCESS;
 }
 
 MIMPI_Retcode MIMPI_Bcast(
@@ -53,7 +73,7 @@ MIMPI_Retcode MIMPI_Bcast(
     int count,
     int root
 ) {
-    TODO
+    return MIMPI_SUCCESS;
 }
 
 MIMPI_Retcode MIMPI_Reduce(
@@ -63,5 +83,5 @@ MIMPI_Retcode MIMPI_Reduce(
     MIMPI_Op op,
     int root
 ) {
-    TODO
+    return MIMPI_SUCCESS;
 }

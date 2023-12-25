@@ -13,6 +13,22 @@ struct {
     int size;
 } global;
 
+// internal functions
+
+int get_proc_state(int rank) {
+    mimpi_master_req req;
+    req.req_type = MIMPI_REQ_GET_STATE;
+    req.req_data.get_state.rank = rank;
+    req.req_data.get_state.my_rank = global.rank;
+    ASSERT_SYS_OK(chsend(60, &req, sizeof(req)));
+
+    mimpi_master_res res;
+    ASSERT_SYS_OK(chrecv(80, &res, sizeof(res)));
+    return res.res_data.get_state.state;
+}
+
+// interface functions
+
 void MIMPI_Init(bool enable_deadlock_detection) {
     channels_init();
 
@@ -21,12 +37,23 @@ void MIMPI_Init(bool enable_deadlock_detection) {
     global.rank = atoi(rank_str);
     global.size = atoi(n_str);
 
-    // TODO
+    // notify master that we are inside MIMPI
+    mimpi_master_req req;
+    req.req_type = MIMPI_REQ_SET_STATE;
+    req.req_data.set_state.rank = global.rank;
+    req.req_data.set_state.state = MIMPI_PROC_INSIDE;
+    ASSERT_SYS_OK(chsend(60, &req, sizeof(req)));
 }
 
 void MIMPI_Finalize() {
-    // TODO
 
+    // notify master that we are after MIMPI
+    mimpi_master_req req;
+    req.req_type = MIMPI_REQ_SET_STATE;
+    req.req_data.set_state.rank = global.rank;
+    req.req_data.set_state.state = MIMPI_PROC_AFTER;
+    ASSERT_SYS_OK(chsend(60, &req, sizeof(req)));
+    
     channels_finalize();
 }
 
@@ -48,6 +75,9 @@ MIMPI_Retcode MIMPI_Send(
         return MIMPI_ERROR_ATTEMPTED_SELF_OP;
     if (destination < 0 || destination >= MIMPI_World_size())
         return MIMPI_ERROR_NO_SUCH_RANK;
+    if (get_proc_state(destination) == MIMPI_PROC_AFTER)
+        return MIMPI_ERROR_REMOTE_FINISHED;
+
     return MIMPI_SUCCESS;
 }
 
@@ -61,6 +91,11 @@ MIMPI_Retcode MIMPI_Recv(
         return MIMPI_ERROR_ATTEMPTED_SELF_OP;
     if (source < 0 || source >= MIMPI_World_size())
         return MIMPI_ERROR_NO_SUCH_RANK;
+
+    // TODO: check buffer
+    int state = get_proc_state(source);
+    if (state == MIMPI_PROC_AFTER)
+        return MIMPI_ERROR_REMOTE_FINISHED;
     return MIMPI_SUCCESS;
 }
 

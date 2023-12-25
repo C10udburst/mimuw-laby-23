@@ -1,0 +1,28 @@
+{
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "repl",
+            "command": "/usr/bin/make",
+            "args": [
+                "-e",
+                "CFLAGS := --std=gnu11 -Wall -DDEBUG -lpthread -g",
+                "repl",
+                "mimpirun",
+                "pipecleaner"
+            ],
+            "options": {
+                "cwd": "${fileDirname}/.."
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "Build repl"
+        }
+    ],
+    "version": "2.0.0"
+}

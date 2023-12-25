@@ -4,6 +4,12 @@
         "mimpi_common.h": "c",
         "mpi.h": "c",
         "unistd.h": "c",
-        "wait.h": "c"
+        "wait.h": "c",
+        "mimpi.h": "c",
+        "stdio.h": "c",
+        "stdarg.h": "c",
+        "stat.h": "c",
+        "types.h": "c",
+        "dirent.h": "c"
     }
 }

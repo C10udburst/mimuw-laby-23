@@ -12,6 +12,8 @@ MIMPI_COMMON_SRC := $(CHANNEL_SRC) mimpi_common.c mimpi_common.h
 MIMPIRUN_SRC := $(MIMPI_COMMON_SRC) mimpirun.c
 MIMPI_SRC := $(MIMPI_COMMON_SRC) mimpi.c mimpi.h
 
+VALGRIND := valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --track-fds=yes
+
 all: mimpirun $(EXAMPLES) $(TESTS)
 
 mimpirun: $(MIMPIRUN_SRC)
@@ -24,8 +26,18 @@ examples_build/%: examples/%.c $(MIMPI_SRC)
 assignment.zip: $(CHANGED_FILES)
 	zip assignment.zip $(CHANGED_FILES)
 
+pipecleaner: pipecleaner.c
+	gcc $(CFLAGS) -o $@ $(filter %.c,$^)
+
 clean:
-	rm -rf mimpirun assignment.zip examples_build
+	rm -rf mimpirun assignment.zip examples_build repl pipecleaner
 
 repl: repl.c $(MIMPI_SRC)
 	gcc $(CFLAGS) -o $@ $(filter %.c,$^)
+
+r: mimpirun repl
+	./pipecleaner 20 1023 ./mimpirun 3 ./repl konsole
+
+rv: mimpirun repl
+	./pipecleaner 20 1023 $(VALGRIND) ./mimpirun 3 $(VALGRIND) ./repl konsole
+

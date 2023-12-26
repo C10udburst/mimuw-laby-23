@@ -10,6 +10,14 @@
         "stdarg.h": "c",
         "stat.h": "c",
         "types.h": "c",
-        "dirent.h": "c"
+        "dirent.h": "c",
+        "socket.h": "c",
+        "mimpi_err.h": "c",
+        "channel.h": "c",
+        "un.h": "c",
+        "string.h": "c",
+        "pthread.h": "c",
+        "cerrno": "c",
+        "stdlib.h": "c"
     }
 }

@@ -1,0 +1,8 @@
+#!/bin/bash
+
+if [ $MIMPI_RANK -eq $GDB_RANK ]; then
+    echo $@
+    gdbserver :2345 $@
+else
+    $@
+fi

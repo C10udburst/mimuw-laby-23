@@ -48,36 +48,5 @@ _Noreturn extern void fatal(const char* fmt, ...);
 /////////////////////////////////////////////
 // Put your declarations here
 
-#define MIMPI_REQ_GET_STATE 5
-#define MIMPI_REQ_SET_STATE 6
-
-#define MIMPI_PROC_BEFORE 0
-#define MIMPI_PROC_INSIDE 1
-#define MIMPI_PROC_AFTER 2
-
-typedef struct {
-    int req_type;
-    union {
-        struct {
-            int rank;
-            int state;
-        } set_state;
-        struct {
-            int rank;
-            int my_rank;
-        } get_state;
-    } req_data;
-    
-} mimpi_master_req;
-
-typedef struct {
-    union {
-        struct {
-            int state;
-        } get_state;
-    } res_data;
-} mimpi_master_res;
-
-
 
 #endif // MIMPI_COMMON_H

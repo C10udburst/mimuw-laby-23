@@ -128,20 +128,9 @@ void parse_fd_flags(int flags, int printfd) {
     skprintf(printfd, "\n");
 }
 
-char* format_proc_state(int state) {
-    switch (state) {
-        case MIMPI_PROC_BEFORE:
-            return "BEFORE";
-        case MIMPI_PROC_INSIDE:
-            return "INSIDE";
-        case MIMPI_PROC_AFTER:
-            return "AFTER";
-        default:
-            return "UNKNOWN";
-    }
-}
-
 bool initialized = false;
+
+extern char **environ;
 
 int parse_line(char* line, int len, int fd) {
     line[len] = '\0';
@@ -256,16 +245,26 @@ int parse_line(char* line, int len, int fd) {
     } if_cmd("state ") {
         int rank;
         sscanf(line + 6, "%d", &rank);
-        int state = get_proc_state(rank);
-        skprintf(fd, "state of %d: %s\n", rank, format_proc_state(state));
+        bool is_done = is_proc_done(rank);
+        skprintf(fd, "Process %d is %s\n", rank, is_done ? "done" : "running");
     } if_cmd("sdelay w ") {
         char* delay_str = malloc(20);
-        sscanf(line + 10, "%s", delay_str);
-        setenv("MIMPI_WRITE_DELAY", delay_str, 1);
+        sscanf(line + 9, "%s", delay_str);
+        PRINT_SYS_OK(setenv("CHANNELS_WRITE_DELAY", delay_str, 1), fd);
     } if_cmd("sdelay r ") {
         char* delay_str = malloc(20);
-        sscanf(line + 10, "%s", delay_str);
-        setenv("MIMPI_READ_DELAY", delay_str, 1);
+        sscanf(line + 9, "%s", delay_str);
+        PRINT_SYS_OK(setenv("CHANNELS_READ_DELAY", delay_str, 1), fd);
+    } if_cmd("env") {
+        char** env = environ;
+        for (; *env; ++env)
+            skprintf(fd, "%s\n", *env);
+    } if_cmd("bufsize ") {
+        int rank;
+        int tag;
+        sscanf(line + 8, "%d %d", &rank, &tag);
+        int size = buf_size(rank, tag);
+        skprintf(fd, "Buffer size for rank %d and tag %d: %dB\n", rank, tag, size);
     } if_cmd("help") {
         skprintf(fd, "Commands:\n");
         skprintf(fd, "  exit\n");
@@ -279,11 +278,12 @@ int parse_line(char* line, int len, int fd) {
         skprintf(fd, "  reduce <count> <op> <root>\n");
         skprintf(fd, "  chrecv <fd> <count>\n");
         skprintf(fd, "  chsend <fd> <count>\n");
+        skprintf(fd, "  bufsize <rank> <tag>\n");
         skprintf(fd, "  fflags <fd>\n");
         skprintf(fd, "  init [deadlock]\n");
         skprintf(fd, "  finalize\n");
         skprintf(fd, "  init?\n");
-        
+        skprintf(fd, "  env\n");
         skprintf(fd, "  state <rank>\n");
         skprintf(fd, "  sdelay <w|r> <delay>\n");
         skprintf(fd, "  help\n");

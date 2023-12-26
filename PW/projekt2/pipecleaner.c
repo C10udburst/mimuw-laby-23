@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
     int p1 = atoi(argv[1]);
     int p2 = atoi(argv[2]);
 
-    for (int i = p1; i < p2; i++) {
+    for (int i = p1; i <= p2; i++) {
         close(i);
     }
 

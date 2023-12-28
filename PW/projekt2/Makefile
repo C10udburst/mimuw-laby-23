@@ -36,11 +36,14 @@ repl: repl.c $(MIMPI_SRC)
 	gcc $(CFLAGS) -o $@ $(filter %.c,$^)
 
 r: mimpirun repl pipecleaner
+	rm -rf ./repl.sock.d || true
 	./pipecleaner 20 1023 ./mimpirun 3 ./repl konsole
 
 rgdb: mimpirun repl pipecleaner
+	rm -rf ./repl.sock.d || true
 	GDB_RANK=0 ./pipecleaner 20 1023 ./mimpirun 3 ./gdbone ./repl konsole
 
 rv: mimpirun repl pipecleaner
+	rm -rf ./repl.sock.d || true
 	./pipecleaner 20 1023 $(VALGRIND) ./pipecleaner 8 13 ./mimpirun 3 $(VALGRIND) ./repl konsole
 

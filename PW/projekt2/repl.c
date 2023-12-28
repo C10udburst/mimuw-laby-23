@@ -132,6 +132,14 @@ bool initialized = false;
 
 extern char **environ;
 
+char* read_bytes(int fd, int count) {
+    char* data = malloc(count);
+    memset(data, '*', count);
+    skprintf(fd, "data (%dB):", count);
+    read(fd, data, count);
+    return data;
+}
+
 int parse_line(char* line, int len, int fd) {
     line[len] = '\0';
     if (strcmp(line, "\n") == 0)
@@ -155,9 +163,7 @@ int parse_line(char* line, int len, int fd) {
         int tag;
         int count;
         sscanf(line + 5, "%d %d %d", &dest, &tag, &count);
-        skprintf(fd, "data (%dB):", count);
-        char* data = malloc(count);
-        read(fd, data, count);
+        char* data = read_bytes(fd, count);
         PRINT_MIMPI_OK(MIMPI_Send(data, count, dest, tag), fd);
         free(data);
     } if_cmd("recv ") {
@@ -174,9 +180,7 @@ int parse_line(char* line, int len, int fd) {
         int count;
         int root;
         sscanf(line + 6, "%d %d", &count, &root);
-        skprintf(fd, "data (%dB):", count);
-        char* data = malloc(count);
-        read(fd, data, count);
+        char* data = read_bytes(fd, count);
         PRINT_MIMPI_OK(MIMPI_Bcast(data, count, root), fd);
         free(data);
     } if_cmd("reduce ") {
@@ -197,9 +201,7 @@ int parse_line(char* line, int len, int fd) {
             skprintf(fd, "Unknown op: %s\n", op);
             return 0;
         }
-        skprintf(fd, "data (%dB):", count);
-        char* in_data = malloc(count);
-        read(fd, in_data, count);
+        char* in_data = read_bytes(fd, count);
         char* out_data = malloc(count + 1);
         PRINT_MIMPI_OK(MIMPI_Reduce(in_data, out_data, count, op_real, root), fd);
         if (MIMPI_World_rank() == root) {
@@ -221,9 +223,7 @@ int parse_line(char* line, int len, int fd) {
         int count;
         int myfd;
         sscanf(line + 7, "%d %d", &myfd, &count);
-        skprintf(fd, "data (%dB):", count);
-        char* data = malloc(count);
-        read(fd, data, count);
+        char* data = read_bytes(fd, count);
         skprintf(fd, "sending %dB\n", count);
         PRINT_SYS_OK(chsend(myfd, data, count), fd);
         free(data);

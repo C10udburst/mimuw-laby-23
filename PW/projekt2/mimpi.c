@@ -14,9 +14,13 @@
 #include "mimpi_common.h"
 
 #define BARRIER_TAG -0xBA221E2 // tag used for barrier messages
+#define BCAST_TAG -0xB4CA57 // tag used for broadcast messages
 #define NOWAIT_TAG -0x1D7E  // tag used for specifying that our process is not waiting for a message
 
 #define DIE_TAG -0xDEAD // tag used for notifying other processes that we are finishing
+
+// define which tag should be printed in debug messages
+//#define DEBUG_TAG BCAST_TAG
 
 typedef struct {
     int tag;
@@ -55,10 +59,22 @@ struct global_t global;
 
 // internal functions
 
-int min(int a, int b) {
-    return a < b ? a : b;
-}
+#define min(a, b) ((a) < (b) ? (a) : (b))
 
+// Passes the given MIMPI error code to the caller
+#define unwrap(method)                  \
+    do {                                \
+        MIMPI_Retcode retcode = method; \
+        if (retcode != MIMPI_SUCCESS)   \
+            return retcode;             \
+    } while (0)
+
+
+#ifndef INTERNAL_USE
+bool __always_inline is_proc_done(int rank);
+#endif
+
+// Checks whether the process with the given rank has finished
 bool is_proc_done(int rank) {
     ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.state));
     bool result = global.states & (1 << rank);
@@ -66,10 +82,26 @@ bool is_proc_done(int rank) {
     return result;
 }
 
-void set_done(int rank) {
+// checks whether processes with the given ranks (bitmask) have finished
+bool __always_inline stopped(int mask) {
+    ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.state));
+    bool result = (global.states & mask) != 0;
+    ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.state));
+    return result;
+}
+
+// Sets the process with the given rank as finished
+void __always_inline set_done(int rank) {
     ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.state));
     global.states |= (1 << rank);
     ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.state));
+}
+
+// Wakes up the buffer thread for the given rank
+void __always_inline wake_recv_uncond(int rank) {
+    ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[rank]));
+    ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
+    ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
 }
 
 void* buffer_thread(void* source_rank) {
@@ -89,9 +121,7 @@ void* buffer_thread(void* source_rank) {
             } else {
                 // The other process has finished
                 set_done(rank);
-                ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[rank]));
-                ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
-                ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
+                wake_recv_uncond(rank);
             }
             break;
         }
@@ -103,14 +133,12 @@ void* buffer_thread(void* source_rank) {
             if (res < 0 && errno != EPIPE)
                 ASSERT_SYS_OK(res);
             set_done(rank);
-            ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[rank]));
-            ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
-            ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
+            wake_recv_uncond(rank);
             break;
         }
     
         // receive data
-        void* data = malloc(header.count);
+        void* data = (header.count == 0) ? NULL : malloc(header.count);
         int offset = 0;
         while (offset < header.count) {
             int count = min(header.count - offset, 512);
@@ -123,9 +151,7 @@ void* buffer_thread(void* source_rank) {
                 } else {
                     // The other process has finished
                     set_done(rank);
-                    ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[rank]));
-                    ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
-                    ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
+                    wake_recv_uncond(rank);
                 }
                 goto kill_thread;
             }
@@ -156,20 +182,8 @@ kill_thread:
     return NULL;
 }
 
-bool ok_tag(int tag, int filter) {
+bool __always_inline ok_tag(int tag, int filter) {
     return (filter == MIMPI_ANY_TAG && tag > 0) || tag == filter;
-}
-
-int buf_size(int rank, int tag) {
-    int size = 0;
-    buffer_entry* entry = &global.buffers[rank];
-    while (entry != NULL) {
-        if (ok_tag(entry->tag, tag)) {
-            size += entry->count;
-        }
-        entry = entry->next;
-    }
-    return size;
 }
 
 buffer_entry* pop(int rank, int tag, int count) {
@@ -301,6 +315,11 @@ MIMPI_Retcode MIMPI_Send(
 
     int fd = 20 + destination;
 
+    #ifdef DEBUG_TAG
+    if (tag == DEBUG_TAG)
+        printf("Sending msg from %d to %d\n", global.rank, destination);
+    #endif
+
     // send header
     packet_header header;
     header.tag = tag;
@@ -336,6 +355,11 @@ MIMPI_Retcode MIMPI_Recv(
     if (source < 0 || source >= MIMPI_World_size())
         return MIMPI_ERROR_NO_SUCH_RANK;
 
+    #ifdef DEBUG_TAG
+    if (tag == DEBUG_TAG)
+        printf("Receiving msg from %d to %d\n", source, global.rank);
+    #endif
+
     ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[source]));
     global.buffer_update[source].tag = tag;
     global.buffer_update[source].count_target = count;
@@ -353,30 +377,94 @@ MIMPI_Retcode MIMPI_Recv(
 
     ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[source]));
 
-    memcpy(data, entry->data, entry->count);
-    free(entry->data);
+    #ifdef DEBUG_TAG
+    if (tag == DEBUG_TAG)
+        printf("Received msg from %d to %d\n", source, global.rank);
+    #endif
+
+    if (count > 0)
+        memcpy(data, entry->data, entry->count);
+    if (entry->data != NULL)
+        free(entry->data);
     free(entry);
 
     return MIMPI_SUCCESS;
 }
 
 MIMPI_Retcode MIMPI_Barrier() {
+    if (global.size == 1)
+        return MIMPI_SUCCESS;
 
-    ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.state));
-    if (global.states != 0) {
-        ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.state));
-        return MIMPI_ERROR_REMOTE_FINISHED;
+    if (global.size == 2) {
+        unwrap(MIMPI_Send(NULL, 0, (global.rank + 1) % 2, BARRIER_TAG));
+        unwrap(MIMPI_Recv(NULL, 0, (global.rank + 1) % 2, BARRIER_TAG));
+        return MIMPI_SUCCESS;
     }
-    ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.state));
+
+    if (stopped(~0))
+        return MIMPI_ERROR_REMOTE_FINISHED;
+
+    if (global.rank == 0) {
+        unwrap(MIMPI_Send(NULL, 0, 1, BARRIER_TAG));
+        unwrap(MIMPI_Recv(NULL, 0, global.size - 1, BARRIER_TAG));
+        unwrap(MIMPI_Send(NULL, 0, 1, BARRIER_TAG));
+    } else if (global.rank == global.size - 1) {
+        unwrap(MIMPI_Recv(NULL, 0, global.rank - 1, BARRIER_TAG));
+        unwrap(MIMPI_Send(NULL, 0, 0, BARRIER_TAG));
+    } else {
+        unwrap(MIMPI_Recv(NULL, 0, global.rank - 1, BARRIER_TAG));
+        unwrap(MIMPI_Send(NULL, 0, global.rank + 1, BARRIER_TAG));
+        unwrap(MIMPI_Recv(NULL, 0, global.rank - 1, BARRIER_TAG));
+        if (global.rank + 1 != global.size - 1)
+            unwrap(MIMPI_Send(NULL, 0, global.rank + 1, BARRIER_TAG));
+    }
 
     return MIMPI_SUCCESS;
 }
+
+#define T_TreeIndex(rank) ((rank - root + global.size) % global.size + 1)
+#define T_Rank(index) ((index - 1 >= global.size) ? index - 1 : ((index - 1 + root) % global.size))
+#define T_Parent(rank) (T_TreeIndex(rank) / 2)
+#define T_LeftChild(rank) (T_TreeIndex(rank) * 2)
+#define T_RightChild(rank) (T_TreeIndex(rank) * 2 + 1)
 
 MIMPI_Retcode MIMPI_Bcast(
     void *data,
     int count,
     int root
 ) {
+
+    if (root < 0 || root >= MIMPI_World_size())
+        return MIMPI_ERROR_NO_SUCH_RANK;
+    
+    if (global.size == 1)
+        return MIMPI_SUCCESS;
+    
+    if (global.size == 2) {
+        if (global.rank == root) {
+            unwrap(MIMPI_Send(data, count, (root + 1) % 2, BCAST_TAG));
+        } else {
+            unwrap(MIMPI_Recv(data, count, root, BCAST_TAG));
+        }
+        return MIMPI_SUCCESS;
+    }
+
+    // TODO: do i need this?
+    /*if (stopped(~(1 << root)))
+        return MIMPI_ERROR_REMOTE_FINISHED;*/
+
+    if (global.rank == root) {
+        unwrap(MIMPI_Send(data, count, T_Rank(T_LeftChild(global.rank)), BCAST_TAG));
+        unwrap(MIMPI_Send(data, count, T_Rank(T_RightChild(global.rank)), BCAST_TAG));
+    } else {
+        unwrap(MIMPI_Recv(data, count, T_Rank(T_Parent(global.rank)), BCAST_TAG));
+        int child = T_Rank(T_LeftChild(global.rank));
+        if (child < global.size)
+            unwrap(MIMPI_Send(data, count, child, BCAST_TAG));
+        child = T_Rank(T_RightChild(global.rank));
+        if (child < global.size)
+            unwrap(MIMPI_Send(data, count, child, BCAST_TAG));
+    }
     
     return MIMPI_SUCCESS;
 }

@@ -1,4 +1,3 @@
-#include "mimpi.h"
 #include "mimpi_internal.h"
 #include "mimpi_common.h"
 #include "channel.h"
@@ -45,6 +44,8 @@
 #define if_cmd(name)                                        \
     else if (strncmp(line, name, sizeof(name) - 1) == 0)
 
+
+void skprintf(int fd, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 void skprintf(int fd, const char* fmt, ...) {
     char buf[1024];
     va_list args;
@@ -180,8 +181,12 @@ int parse_line(char* line, int len, int fd) {
         int count;
         int root;
         sscanf(line + 6, "%d %d", &count, &root);
-        char* data = read_bytes(fd, count);
+        char* data = (MIMPI_World_rank() == root) ? read_bytes(fd, count) : malloc(count);
         PRINT_MIMPI_OK(MIMPI_Bcast(data, count, root), fd);
+        if (MIMPI_World_rank() != root) {
+            data[count] = '\0';
+            skprintf(fd, "data (%dB): %s\n", count, data);
+        }
         free(data);
     } if_cmd("reduce ") {
         int count;
@@ -259,12 +264,6 @@ int parse_line(char* line, int len, int fd) {
         char** env = environ;
         for (; *env; ++env)
             skprintf(fd, "%s\n", *env);
-    } if_cmd("bufsize ") {
-        int rank;
-        int tag;
-        sscanf(line + 8, "%d %d", &rank, &tag);
-        int size = buf_size(rank, tag);
-        skprintf(fd, "Buffer size for rank %d and tag %d: %dB\n", rank, tag, size);
     } if_cmd("help") {
         skprintf(fd, "Commands:\n");
         skprintf(fd, "  exit\n");
@@ -278,7 +277,6 @@ int parse_line(char* line, int len, int fd) {
         skprintf(fd, "  reduce <count> <op> <root>\n");
         skprintf(fd, "  chrecv <fd> <count>\n");
         skprintf(fd, "  chsend <fd> <count>\n");
-        skprintf(fd, "  bufsize <rank> <tag>\n");
         skprintf(fd, "  fflags <fd>\n");
         skprintf(fd, "  init [deadlock]\n");
         skprintf(fd, "  finalize\n");

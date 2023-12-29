@@ -37,7 +37,7 @@ repl: repl.c $(MIMPI_SRC)
 
 r: mimpirun repl pipecleaner
 	rm -rf ./repl.sock.d || true
-	./pipecleaner 20 1023 ./mimpirun 3 ./repl konsole
+	./pipecleaner 20 1023 ./mimpirun 4 ./repl konsole
 
 rgdb: mimpirun repl pipecleaner
 	rm -rf ./repl.sock.d || true

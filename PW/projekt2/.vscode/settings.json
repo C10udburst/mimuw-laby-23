@@ -18,6 +18,13 @@
         "string.h": "c",
         "pthread.h": "c",
         "cerrno": "c",
-        "stdlib.h": "c"
-    }
+        "stdlib.h": "c",
+        "random": "c",
+        "stdbool.h": "c"
+    },
+    "cSpell.words": [
+        "chrecv",
+        "chsend",
+        "MIMPI"
+    ]
 }

@@ -517,6 +517,7 @@ MIMPI_Retcode MIMPI_Reduce(
             char* received = malloc(count);
             unwrap(MIMPI_Recv(received, count, (root + 1) % 2, REDUCE_TAG));
             apply(op, received, recv_data, count);
+            free(received);
         } else {
             unwrap(MIMPI_Send(send_data, count, root, REDUCE_TAG));
         }

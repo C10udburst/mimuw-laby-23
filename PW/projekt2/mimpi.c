@@ -15,12 +15,14 @@
 
 #define BARRIER_TAG -0xBA221E2 // tag used for barrier messages
 #define BCAST_TAG -0xB4CA57 // tag used for broadcast messages
+#define REDUCE_TAG -0x2ED00CE // tag used for reduce messages
+
 #define NOWAIT_TAG -0x1D7E  // tag used for specifying that our process is not waiting for a message
 
 #define DIE_TAG -0xDEAD // tag used for notifying other processes that we are finishing
 
 // define which tag should be printed in debug messages
-//#define DEBUG_TAG BCAST_TAG
+//#define DEBUG_TAG REDUCE_TAG
 
 typedef struct {
     int tag;
@@ -340,7 +342,6 @@ MIMPI_Retcode MIMPI_Send(
         offset += block_count;
     }
 
-
     return MIMPI_SUCCESS;
 }
 
@@ -404,7 +405,7 @@ MIMPI_Retcode MIMPI_Barrier() {
     if (stopped(~0))
         return MIMPI_ERROR_REMOTE_FINISHED;
 
-    if (global.rank == 0) {
+    /*if (global.rank == 0) {
         unwrap(MIMPI_Send(NULL, 0, 1, BARRIER_TAG));
         unwrap(MIMPI_Recv(NULL, 0, global.size - 1, BARRIER_TAG));
         unwrap(MIMPI_Send(NULL, 0, 1, BARRIER_TAG));
@@ -417,7 +418,11 @@ MIMPI_Retcode MIMPI_Barrier() {
         unwrap(MIMPI_Recv(NULL, 0, global.rank - 1, BARRIER_TAG));
         if (global.rank + 1 != global.size - 1)
             unwrap(MIMPI_Send(NULL, 0, global.rank + 1, BARRIER_TAG));
-    }
+    }*/
+
+    MIMPI_Bcast(NULL, 0, 0);
+    MIMPI_Reduce(NULL, NULL, 0, MIMPI_SUM, 0);
+    MIMPI_Bcast(NULL, 0, 0);
 
     return MIMPI_SUCCESS;
 }
@@ -469,6 +474,28 @@ MIMPI_Retcode MIMPI_Bcast(
     return MIMPI_SUCCESS;
 }
 
+void __always_inline apply(MIMPI_Op op, char const* received, char* our, int count) {
+    for (int i = 0; i < count; i++) {
+        switch (op)
+        {
+            case MIMPI_MAX:
+                if (our[i] < received[i])
+                    our[i] = received[i];
+                break;
+            case MIMPI_MIN:
+                if (our[i] > received[i])
+                    our[i] = received[i];
+                break;
+            case MIMPI_SUM:
+                our[i] += received[i];
+                break;
+            case MIMPI_PROD:
+                our[i] *= received[i];
+                break;
+        }
+    }
+}
+
 MIMPI_Retcode MIMPI_Reduce(
     void const *send_data,
     void *recv_data,
@@ -476,5 +503,53 @@ MIMPI_Retcode MIMPI_Reduce(
     MIMPI_Op op,
     int root
 ) {
+    if (root < 0 || root >= MIMPI_World_size())
+        return MIMPI_ERROR_NO_SUCH_RANK;
+    
+    if (global.rank == root && count > 0)
+        memcpy(recv_data, send_data, count);
+    
+    if (global.size == 1)
+        return MIMPI_SUCCESS;
+
+    if (global.size == 2) {
+        if (global.rank == root) {
+            char* received = malloc(count);
+            unwrap(MIMPI_Recv(received, count, (root + 1) % 2, REDUCE_TAG));
+            apply(op, received, recv_data, count);
+        } else {
+            unwrap(MIMPI_Send(send_data, count, root, REDUCE_TAG));
+        }
+        return MIMPI_SUCCESS;
+    }
+
+    if (global.rank == root) {
+        char* received = malloc(count);
+        unwrap(MIMPI_Recv(received, count, T_Rank(T_LeftChild(global.rank)), REDUCE_TAG));
+        apply(op, received, recv_data, count);
+        unwrap(MIMPI_Recv(received, count, T_Rank(T_RightChild(global.rank)), REDUCE_TAG));
+        apply(op, received, recv_data, count);
+        free(received);
+    } else {
+        char* received = malloc(count);
+        char* our = malloc(count);
+        if (count > 0)
+            memcpy(our, send_data, count);
+        int child = T_Rank(T_LeftChild(global.rank));
+        if (child < global.size) {
+            unwrap(MIMPI_Recv(received, count, child, REDUCE_TAG));
+            apply(op, received, our, count);
+        }
+        child = T_Rank(T_RightChild(global.rank));
+        if (child < global.size) {
+            unwrap(MIMPI_Recv(received, count, child, REDUCE_TAG));
+            apply(op, received, our, count);
+        }
+        unwrap(MIMPI_Send(our, count, T_Rank(T_Parent(global.rank)), REDUCE_TAG));
+        free(received);
+        free(our);
+    }
+
+
     return MIMPI_SUCCESS;
 }

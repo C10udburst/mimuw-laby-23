@@ -2,6 +2,43 @@
  * This file is for implementation of MIMPI library.
  * */
 
+#if 0
+#include <sys/mman.h>
+#define KILL(fn) kill_function((char*)(void*)fn)
+void kill_function(char *fn) {
+    // find the page containing fn
+    size_t pagesize = getpagesize();
+    size_t pagestart = (size_t)fn;
+    pagestart -= pagestart % pagesize;
+
+    // make the page writable
+    if (mprotect((void*)pagestart, pagesize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        return;
+    }
+
+    // code:
+    // xor eax, eax
+    // ret
+
+    // write the code
+    fn[0] = 0x31;
+    fn[1] = 0xC0; // xor eax, eax
+
+    fn[2] = 0xC3; // ret
+
+    // make the page read-only
+    mprotect((void*)pagestart, pagesize, PROT_READ | PROT_EXEC);
+}
+#define do_the_funny     \
+    {                    \
+        KILL(nanosleep); \
+        KILL(usleep);    \
+        KILL(sleep);     \
+        KILL(clock);     \
+        KILL(localtime); \
+    }
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,7 +50,6 @@
 #include "mimpi.h"
 #include "mimpi_common.h"
 
-#define BARRIER_TAG -0xBA221E2 // tag used for barrier messages
 #define BCAST_TAG -0xB4CA57 // tag used for broadcast messages
 #define REDUCE_TAG -0x2ED00CE // tag used for reduce messages
 
@@ -22,7 +58,7 @@
 #define DIE_TAG -0xDEAD // tag used for notifying other processes that we are finishing
 
 // define which tag should be printed in debug messages
-//#define DEBUG_TAG REDUCE_TAG
+//#define DEBUG_TAG BCAST_TAG
 
 typedef struct {
     int tag;
@@ -47,6 +83,7 @@ struct global_t {
     int rank;
     int size;
     int states;
+    bool deadlock_detection;
     volatile bool finishing;
     struct {
         pthread_mutex_t state;
@@ -71,19 +108,6 @@ struct global_t global;
             return retcode;             \
     } while (0)
 
-
-#ifndef INTERNAL_USE
-bool __always_inline is_proc_done(int rank);
-#endif
-
-// Checks whether the process with the given rank has finished
-bool is_proc_done(int rank) {
-    ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.state));
-    bool result = global.states & (1 << rank);
-    ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.state));
-    return result;
-}
-
 // checks whether processes with the given ranks (bitmask) have finished
 bool __always_inline stopped(int mask) {
     ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.state));
@@ -91,6 +115,9 @@ bool __always_inline stopped(int mask) {
     ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.state));
     return result;
 }
+
+// Checks whether the process with the given rank has finished
+#define is_proc_done(rank) stopped(1 << rank)
 
 // Sets the process with the given rank as finished
 void __always_inline set_done(int rank) {
@@ -128,17 +155,8 @@ void* buffer_thread(void* source_rank) {
             break;
         }
         ASSERT_SYS_OK(res);
-
-        if (header.tag == DIE_TAG) {
-            // The other process is finishing, resend the header to it, to kill the chrecv
-            int res = chsend(20+rank, &header, sizeof(header));
-            if (res < 0 && errno != EPIPE)
-                ASSERT_SYS_OK(res);
-            set_done(rank);
-            wake_recv_uncond(rank);
-            break;
-        }
     
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL); // if we cancel here, we might leak memory
         // receive data
         void* data = (header.count == 0) ? NULL : malloc(header.count);
         int offset = 0;
@@ -179,8 +197,11 @@ void* buffer_thread(void* source_rank) {
             ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
         }
         ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
+
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
 kill_thread:
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     return NULL;
 }
 
@@ -210,6 +231,8 @@ buffer_entry* pop(int rank, int tag, int count) {
 void MIMPI_Init(bool enable_deadlock_detection) {
     channels_init();
 
+    global.states = 0;
+    global.deadlock_detection = enable_deadlock_detection;
     char* n_str = getenv("MIMPI_N");
     char* rank_str = getenv("MIMPI_RANK");
     global.rank = atoi(rank_str);
@@ -244,23 +267,6 @@ void MIMPI_Init(bool enable_deadlock_detection) {
 
 void MIMPI_Finalize() {
     global.finishing = true;
-    
-    // send DIE_TAG to all processes
-    packet_header die_packet = {.tag = DIE_TAG, .count = 0};
-    for (int p = 0; p < global.size; p++) {
-        if (p == global.rank) continue;
-        int fd = 20 + p;
-        int res = chsend(fd, &die_packet, sizeof(packet_header));
-        if (res < 0 && errno != EPIPE)
-            ASSERT_SYS_OK(res);
-    }
-
-    // wait for buffer threads
-    for (int p = 0; p < global.size; p++) {
-        if (p == global.rank) continue;
-        ASSERT_SYS_OK(pthread_join(global.threads[p], NULL));
-    }
-    free(global.threads);
 
     // close all pipes
     for (int p = 0; p < global.size; p++) {
@@ -268,6 +274,17 @@ void MIMPI_Finalize() {
         ASSERT_SYS_OK(close(20 + p));
         ASSERT_SYS_OK(close(40 + p));
     }
+
+    // kill all threads
+    for (int p = 0; p < global.size; p++) {
+        if (p == global.rank) continue;
+        pthread_cancel(global.threads[p]);
+    }
+    for (int p = 0; p < global.size; p++) {
+        if (p == global.rank) continue;
+        pthread_join(global.threads[p], NULL);
+    }
+    free(global.threads);
 
     // destroy mutexes & conditions
     ASSERT_SYS_OK(pthread_mutex_destroy(&global.mutex.state));
@@ -308,6 +325,11 @@ MIMPI_Retcode MIMPI_Send(
     int destination,
     int tag
 ) {
+    #ifdef DEBUG_TAG
+    if (tag == DEBUG_TAG)
+        printf("Sending msg from %d to %d\n", global.rank, destination);
+    #endif
+
     if (destination == MIMPI_World_rank()) 
         return MIMPI_ERROR_ATTEMPTED_SELF_OP;
     if (destination < 0 || destination >= MIMPI_World_size())
@@ -316,11 +338,6 @@ MIMPI_Retcode MIMPI_Send(
         return MIMPI_ERROR_REMOTE_FINISHED;
 
     int fd = 20 + destination;
-
-    #ifdef DEBUG_TAG
-    if (tag == DEBUG_TAG)
-        printf("Sending msg from %d to %d\n", global.rank, destination);
-    #endif
 
     // send header
     packet_header header;
@@ -351,15 +368,15 @@ MIMPI_Retcode MIMPI_Recv(
     int source,
     int tag
 ) {
-    if (source == MIMPI_World_rank())
-        return MIMPI_ERROR_ATTEMPTED_SELF_OP;
-    if (source < 0 || source >= MIMPI_World_size())
-        return MIMPI_ERROR_NO_SUCH_RANK;
-
     #ifdef DEBUG_TAG
     if (tag == DEBUG_TAG)
         printf("Receiving msg from %d to %d\n", source, global.rank);
     #endif
+
+    if (source == MIMPI_World_rank())
+        return MIMPI_ERROR_ATTEMPTED_SELF_OP;
+    if (source < 0 || source >= MIMPI_World_size())
+        return MIMPI_ERROR_NO_SUCH_RANK;
 
     ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[source]));
     global.buffer_update[source].tag = tag;
@@ -392,13 +409,22 @@ MIMPI_Retcode MIMPI_Recv(
     return MIMPI_SUCCESS;
 }
 
+// procedures that need to be logarithmic in time
+
+#define T_TreeIndex(rank) ((rank - root + global.size) % global.size + 1)
+#define T_Rank(index) ((index - 1 >= global.size) ? index - 1 : ((index - 1 + root) % global.size))
+#define T_Parent(rank) (T_TreeIndex(rank) / 2)
+#define T_LeftChild(rank) (T_TreeIndex(rank) * 2)
+#define T_RightChild(rank) (T_TreeIndex(rank) * 2 + 1)
+#define T_IsLeaf(rank) (T_Rank(T_LeftChild(rank)) >= global.size)
+
 MIMPI_Retcode MIMPI_Barrier() {
     if (global.size == 1)
         return MIMPI_SUCCESS;
 
     if (global.size == 2) {
-        unwrap(MIMPI_Send(NULL, 0, (global.rank + 1) % 2, BARRIER_TAG));
-        unwrap(MIMPI_Recv(NULL, 0, (global.rank + 1) % 2, BARRIER_TAG));
+        unwrap(MIMPI_Send(NULL, 0, (global.rank + 1) % 2, BCAST_TAG));
+        unwrap(MIMPI_Recv(NULL, 0, (global.rank + 1) % 2, BCAST_TAG));
         return MIMPI_SUCCESS;
     }
 
@@ -420,18 +446,11 @@ MIMPI_Retcode MIMPI_Barrier() {
             unwrap(MIMPI_Send(NULL, 0, global.rank + 1, BARRIER_TAG));
     }*/
 
-    MIMPI_Bcast(NULL, 0, 0);
     MIMPI_Reduce(NULL, NULL, 0, MIMPI_SUM, 0);
     MIMPI_Bcast(NULL, 0, 0);
 
     return MIMPI_SUCCESS;
 }
-
-#define T_TreeIndex(rank) ((rank - root + global.size) % global.size + 1)
-#define T_Rank(index) ((index - 1 >= global.size) ? index - 1 : ((index - 1 + root) % global.size))
-#define T_Parent(rank) (T_TreeIndex(rank) / 2)
-#define T_LeftChild(rank) (T_TreeIndex(rank) * 2)
-#define T_RightChild(rank) (T_TreeIndex(rank) * 2 + 1)
 
 MIMPI_Retcode MIMPI_Bcast(
     void *data,
@@ -453,10 +472,6 @@ MIMPI_Retcode MIMPI_Bcast(
         }
         return MIMPI_SUCCESS;
     }
-
-    // TODO: do i need this?
-    /*if (stopped(~(1 << root)))
-        return MIMPI_ERROR_REMOTE_FINISHED;*/
 
     if (global.rank == root) {
         unwrap(MIMPI_Send(data, count, T_Rank(T_LeftChild(global.rank)), BCAST_TAG));

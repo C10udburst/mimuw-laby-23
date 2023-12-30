@@ -20,7 +20,10 @@
         "cerrno": "c",
         "stdlib.h": "c",
         "random": "c",
-        "stdbool.h": "c"
+        "stdbool.h": "c",
+        "type_traits": "c",
+        "errno.h": "c",
+        "condition_variable": "c"
     },
     "cSpell.words": [
         "chrecv",

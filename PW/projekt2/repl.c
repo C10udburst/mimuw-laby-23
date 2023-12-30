@@ -1,4 +1,4 @@
-#include "mimpi_internal.h"
+#include "mimpi.h"
 #include "mimpi_common.h"
 #include "channel.h"
 #include "examples/mimpi_err.h"
@@ -247,11 +247,6 @@ int parse_line(char* line, int len, int fd) {
         int flags = fcntl(myfd, F_GETFL);
         PRINT_SYS_OK(flags, flags);
         parse_fd_flags(flags, fd);
-    } if_cmd("state ") {
-        int rank;
-        sscanf(line + 6, "%d", &rank);
-        bool is_done = is_proc_done(rank);
-        skprintf(fd, "Process %d is %s\n", rank, is_done ? "done" : "running");
     } if_cmd("sdelay w ") {
         char* delay_str = malloc(20);
         sscanf(line + 9, "%s", delay_str);
@@ -282,7 +277,6 @@ int parse_line(char* line, int len, int fd) {
         skprintf(fd, "  finalize\n");
         skprintf(fd, "  init?\n");
         skprintf(fd, "  env\n");
-        skprintf(fd, "  state <rank>\n");
         skprintf(fd, "  sdelay <w|r> <delay>\n");
         skprintf(fd, "  help\n");
         skprintf(fd, "\n");

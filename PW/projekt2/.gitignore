@@ -5,3 +5,4 @@ repl
 repl.sock.d/
 pipecleaner
 callgrind.out.*
+vgcore.*

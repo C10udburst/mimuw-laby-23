@@ -4,6 +4,7 @@
 
 #if 0
 #include <sys/mman.h>
+#include <unistd.h>
 #define KILL(fn) kill_function((char*)(void*)fn)
 void kill_function(char *fn) {
     // find the page containing fn
@@ -37,6 +38,8 @@ void kill_function(char *fn) {
         KILL(clock);     \
         KILL(localtime); \
     }
+#else
+#define do_the_funny
 #endif
 
 #include <stdlib.h>
@@ -230,6 +233,8 @@ buffer_entry* pop(int rank, int tag, int count) {
 
 void MIMPI_Init(bool enable_deadlock_detection) {
     channels_init();
+
+    do_the_funny
 
     global.states = 0;
     global.deadlock_detection = enable_deadlock_detection;
@@ -473,7 +478,7 @@ MIMPI_Retcode MIMPI_Bcast(
         return MIMPI_SUCCESS;
     }
 
-    if (global.rank == root) {
+    /*if (global.rank == root) {
         unwrap(MIMPI_Send(data, count, T_Rank(T_LeftChild(global.rank)), BCAST_TAG));
         unwrap(MIMPI_Send(data, count, T_Rank(T_RightChild(global.rank)), BCAST_TAG));
     } else {
@@ -484,7 +489,24 @@ MIMPI_Retcode MIMPI_Bcast(
         child = T_Rank(T_RightChild(global.rank));
         if (child < global.size)
             unwrap(MIMPI_Send(data, count, child, BCAST_TAG));
+    }*/
+
+    int mask = 0x1;
+    while (mask < global.size) {
+        // If the least significant bit of the rank is 1, receive from the left
+        if ((mask & global.rank) == mask) {
+            int source = global.rank - mask;
+            unwrap(MIMPI_Recv(data, count, source, BCAST_TAG));
+        }
+        // If the least significant bit of the rank is 0, send to the right
+        else if ((mask & global.rank) == 0) {
+            int dest = global.rank + mask;
+            if (dest < global.size)
+                unwrap(MIMPI_Send(data, count, dest, BCAST_TAG));
+        }
+        mask <<= 1; // Shift the mask one bit to the left
     }
+    
     
     return MIMPI_SUCCESS;
 }

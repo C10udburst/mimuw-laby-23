@@ -23,7 +23,8 @@
         "stdbool.h": "c",
         "type_traits": "c",
         "errno.h": "c",
-        "condition_variable": "c"
+        "condition_variable": "c",
+        "mman.h": "c"
     },
     "cSpell.words": [
         "chrecv",

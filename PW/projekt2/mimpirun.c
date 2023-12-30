@@ -6,13 +6,41 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <errno.h>
 #include <pthread.h>
 #include "mimpi_common.h"
 #include "channel.h"
 
 
-#define CH_READ(p1, p2) (160 + p1 * (n*2) + p2 * 2)
-#define CH_WRITE(p2, p1) (160 + p1 * (n*2) + p2 * 2 + 1)
+#define CH_READ(p1, p2) (160 + p1 * (18*2) + p2 * 2)
+#define CH_WRITE(p2, p1) (160 + p1 * (18*2) + p2 * 2 + 1)
+
+
+#define SEND_DEADLOCK(to, cause) \
+    do { \
+        int res = chsend(CH_WRITE(to, 17), &cause, sizeof(cause)); \
+        if (!(res < 0 && (errno == EPIPE || errno == EBADF))) \
+            ASSERT_SYS_OK(res); \
+    } while(0)
+
+void* deadlock_thread(void* wtp) {
+    int* wait_table = (int*) wtp;
+    wait_packet_t wait_packet;
+    while (1) {
+        int res = chrecv(60, &wait_packet, sizeof(wait_packet));
+        if ((res < 0 && errno == EPIPE) || (res >= 0 && res < sizeof(wait_packet)))
+            continue;
+        ASSERT_SYS_OK(res);
+        //if (wait_packet.my_rank == KILL_DEADLOCK_DETECTOR)
+        //    break;
+        wait_table[wait_packet.my_rank] = wait_packet.sender_rank;
+        if (wait_table[wait_packet.sender_rank] == wait_packet.my_rank) {
+            SEND_DEADLOCK(wait_packet.my_rank, wait_packet.sender_rank);
+            SEND_DEADLOCK(wait_packet.sender_rank, wait_packet.my_rank);
+        }
+    }
+    return NULL;
+}
 
 int main(int argc, char **argv) {
     int n = atoi(argv[1]);
@@ -22,6 +50,8 @@ int main(int argc, char **argv) {
     // in child process:
     // write pipe to p_i is at fd: 20 + i
     // read pipe from p_i is at fd: 40 + i
+    // 61 is write pipe to deadlock detector
+    // 62 is read pipe from deadlock detector
 
     int fd[2];
 
@@ -36,6 +66,20 @@ int main(int argc, char **argv) {
             ASSERT_SYS_OK(close(fd[1]));
         }
     }
+
+    for (int p1 = 0; p1 < n; p1++) {
+        ASSERT_SYS_OK(channel(fd));
+        ASSERT_SYS_OK(dup2(fd[0], CH_READ(p1, 17))); // read from deadlock detector
+        ASSERT_SYS_OK(dup2(fd[1], CH_WRITE(p1, 17))); // write to deadlock detector
+        ASSERT_SYS_OK(close(fd[0]));
+        ASSERT_SYS_OK(close(fd[1]));
+    }
+
+    ASSERT_SYS_OK(channel(fd));
+    ASSERT_SYS_OK(dup2(fd[0], 60)); // read from deadlock detector
+    ASSERT_SYS_OK(dup2(fd[1], 61)); // write to deadlock detector
+    ASSERT_SYS_OK(close(fd[0]));
+    ASSERT_SYS_OK(close(fd[1]));
     
 
     // start all children
@@ -54,7 +98,12 @@ int main(int argc, char **argv) {
                     ASSERT_SYS_OK(close(CH_READ(p1, p2)));
                     ASSERT_SYS_OK(close(CH_WRITE(p2, p1)));
                 }
+                if (p1 == i)
+                    ASSERT_SYS_OK(dup2(CH_READ(p1, 17), 62));
+                ASSERT_SYS_OK(close(CH_READ(p1, 17)));
+                ASSERT_SYS_OK(close(CH_WRITE(p1, 17)));
             }
+            ASSERT_SYS_OK(close(60));
             sprintf(argv[1], "%d", i);
             ASSERT_SYS_OK(setenv("MIMPI_RANK", argv[1], 1));
             ASSERT_SYS_OK(execvp(argv[2], argv + 2));
@@ -67,9 +116,30 @@ int main(int argc, char **argv) {
             ASSERT_SYS_OK(close(CH_READ(p1, p2)));
             ASSERT_SYS_OK(close(CH_WRITE(p2, p1)));
         }
+        ASSERT_SYS_OK(close(CH_READ(p1, 17)));
     }
 
+    ASSERT_SYS_OK(close(61));
+
+    // start deadlock detector
+    channels_init();
+    int* wait_table = malloc(sizeof(int) * n);
+    for (int i = 0; i < n; i++)
+        wait_table[i] = DEADLOCK_NO_WAIT;
+    pthread_t deadlock_detector;
+    ASSERT_SYS_OK(pthread_create(&deadlock_detector, NULL, deadlock_thread, wait_table));
+
     while (wait(NULL) > 0); // wait for all children to finish
+
+    pthread_cancel(deadlock_detector);
+    pthread_join(deadlock_detector, NULL);
+    free(wait_table);
+    channels_finalize();
+
+    ASSERT_SYS_OK(close(60));
+    for (int p1 = 0; p1 < n; p1++) {
+        ASSERT_SYS_OK(close(CH_WRITE(p1, 17)));
+    }
 
     return 0;
 }

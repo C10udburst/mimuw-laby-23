@@ -48,5 +48,12 @@ _Noreturn extern void fatal(const char* fmt, ...);
 /////////////////////////////////////////////
 // Put your declarations here
 
+#define KILL_DEADLOCK_DETECTOR -69
+#define DEADLOCK_NO_WAIT -1
+
+typedef struct {
+    int my_rank;
+    int sender_rank;
+} wait_packet_t;
 
 #endif // MIMPI_COMMON_H

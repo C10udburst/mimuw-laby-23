@@ -83,6 +83,7 @@ typedef struct {
     int count_target;
     volatile bool found;
     pthread_cond_t cond;
+    bool deadlock;
 } buffer_update_t;
 
 typedef struct pthread_list_t {
@@ -108,6 +109,7 @@ struct global_t {
         pthread_mutex_t* send_pipe;
         pthread_mutex_t send_threads;
     } mutex;
+    pthread_t deadlock_thread;
     pthread_t* recv_threads;
     pthread_list_t send_threads;
     buffer_update_t* buffer_update;
@@ -225,6 +227,35 @@ kill_thread:
     return NULL;
 }
 
+void* deadlock_watchdog(void*) {
+    int res;
+    int rank;
+    while (1) {
+        res = chrecv(62, &rank, sizeof(rank));
+        if ((res < 0 && (errno == EPIPE || errno == EBADF)) || (res >= 0 && res < sizeof(rank)))
+            break;
+        ASSERT_SYS_OK(res);
+        ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[rank]));
+        global.buffer_update[rank].deadlock = true;
+        ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
+        ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
+    }
+
+    return NULL;
+}
+
+void __always_inline notify_deadlock(int rank) {
+    if (!global.deadlock_detection) return;
+
+    wait_packet_t packet;
+    packet.my_rank = global.rank;
+    packet.sender_rank = rank;
+    int res = chsend(61, &packet, sizeof(packet));
+    if (res < 0 && (errno == EPIPE || errno == EBADF))
+        return;
+    ASSERT_SYS_OK(res);
+}
+
 bool __always_inline ok_tag(int tag, int filter) {
     return (filter == MIMPI_ANY_TAG && tag > 0) || tag == filter;
 }
@@ -290,10 +321,17 @@ void MIMPI_Init(bool enable_deadlock_detection) {
         *rank = p;
         ASSERT_SYS_OK(pthread_create(&global.recv_threads[p], NULL, buffer_thread, rank));
     }
+    
+    // start deadlock watchdog
+    if (global.deadlock_detection) {
+        ASSERT_SYS_OK(pthread_create(&global.deadlock_thread, NULL, deadlock_watchdog, NULL));
+    }
 }
 
 void MIMPI_Finalize() {
     global.finishing = true;
+
+    notify_deadlock(DEADLOCK_NO_WAIT);
 
     // kill all send threads
     ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.send_threads));
@@ -314,6 +352,8 @@ void MIMPI_Finalize() {
         ASSERT_SYS_OK(close(20 + p));
         ASSERT_SYS_OK(close(40 + p));
     }
+    ASSERT_SYS_OK(close(61));
+    ASSERT_SYS_OK(close(62));
 
     // kill all recv threads
     for (int p = 0; p < global.size; p++) {
@@ -325,6 +365,12 @@ void MIMPI_Finalize() {
         pthread_join(global.recv_threads[p], NULL);
     }
     free(global.recv_threads);
+
+    // kill deadlock watchdog
+    if (global.deadlock_detection) {
+        pthread_cancel(global.deadlock_thread);
+        pthread_join(global.deadlock_thread, NULL);
+    }
 
     // destroy mutexes & conditions
     ASSERT_SYS_OK(pthread_mutex_destroy(&global.mutex.state));
@@ -502,7 +548,10 @@ MIMPI_Retcode MIMPI_Recv(
 
     buffer_entry* entry = pop(source, tag, count);
 
-    while (entry == NULL && !is_proc_done(source)) {
+    if (entry == NULL)
+        notify_deadlock(source);
+
+    while (entry == NULL && !is_proc_done(source) && !global.buffer_update[source].deadlock) {
         ASSERT_SYS_OK(pthread_cond_wait(&global.buffer_update[source].cond, &global.mutex.buffers[source]));
         if (global.buffer_update[source].found) // suppress spurious wakeups
             entry = pop(source, tag, count);
@@ -510,7 +559,20 @@ MIMPI_Retcode MIMPI_Recv(
 
     global.buffer_update[source].tag = NOWAIT_TAG;
 
+    if (global.buffer_update[source].deadlock) {
+        global.buffer_update[source].deadlock = false;
+        ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[source]));
+        notify_deadlock(DEADLOCK_NO_WAIT);
+        return MIMPI_ERROR_DEADLOCK_DETECTED;
+    }
+
+    global.buffer_update[source].deadlock = false;
     ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[source]));
+
+    notify_deadlock(DEADLOCK_NO_WAIT);
+
+    if (entry == NULL)
+        return MIMPI_ERROR_REMOTE_FINISHED;
 
     #ifdef DEBUG_TAG
     if (tag == DEBUG_TAG)

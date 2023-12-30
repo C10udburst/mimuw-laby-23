@@ -58,8 +58,6 @@ void kill_function(char *fn) {
 
 #define NOWAIT_TAG -0x1D7E  // tag used for specifying that our process is not waiting for a message
 
-#define DIE_TAG -0xDEAD // tag used for notifying other processes that we are finishing
-
 // define which tag should be printed in debug messages
 //#define DEBUG_TAG BCAST_TAG
 

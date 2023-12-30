@@ -34,7 +34,7 @@ void* deadlock_thread(void* wtp) {
         //if (wait_packet.my_rank == KILL_DEADLOCK_DETECTOR)
         //    break;
         wait_table[wait_packet.my_rank] = wait_packet.sender_rank;
-        if (wait_table[wait_packet.sender_rank] == wait_packet.my_rank) {
+        if (wait_packet.sender_rank != DEADLOCK_NO_WAIT && wait_table[wait_packet.sender_rank] == wait_packet.my_rank) {
             SEND_DEADLOCK(wait_packet.my_rank, wait_packet.sender_rank);
             SEND_DEADLOCK(wait_packet.sender_rank, wait_packet.my_rank);
         }

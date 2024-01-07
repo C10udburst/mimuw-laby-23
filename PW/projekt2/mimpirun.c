@@ -16,10 +16,10 @@
 #define CH_WRITE(p2, p1) (160 + p1 * (18*2) + p2 * 2 + 1)
 
 
-#define SEND_DEADLOCK(to, cause) \
-    do { \
+#define SEND_DEADLOCK(to, cause)                                   \
+    do {                                                           \
         int res = chsend(CH_WRITE(to, 17), &cause, sizeof(cause)); \
-        if (!(res < 0 && (errno == EPIPE || errno == EBADF))) \
+        if (!(res < 0 && (errno == EPIPE || errno == EBADF)))      \
             ASSERT_SYS_OK(res); \
     } while(0)
 
@@ -77,7 +77,7 @@ int main(int argc, char **argv) {
 
     ASSERT_SYS_OK(channel(fd));
     ASSERT_SYS_OK(dup2(fd[0], 60)); // read from deadlock detector
-    ASSERT_SYS_OK(dup2(fd[1], 61)); // write to deadlock detector
+    ASSERT_SYS_OK(dup2(fd[1], WRITE_DEADLOCK)); // write to deadlock detector
     ASSERT_SYS_OK(close(fd[0]));
     ASSERT_SYS_OK(close(fd[1]));
     
@@ -91,15 +91,15 @@ int main(int argc, char **argv) {
                 for (int p2 = 0; p2 < n; p2++) {
                     if (p1 == p2) continue;
                     if (p1 == i) {
-                        ASSERT_SYS_OK(dup2(CH_READ(p1, p2), 40 + p2));
+                        ASSERT_SYS_OK(dup2(CH_READ(p1, p2), READ_PIPE(p2)));
                     } else if (p2 == i) {
-                        ASSERT_SYS_OK(dup2(CH_WRITE(p2, p1), 20 + p1));
+                        ASSERT_SYS_OK(dup2(CH_WRITE(p2, p1), WRITE_PIPE(p1)));
                     }
                     ASSERT_SYS_OK(close(CH_READ(p1, p2)));
                     ASSERT_SYS_OK(close(CH_WRITE(p2, p1)));
                 }
                 if (p1 == i)
-                    ASSERT_SYS_OK(dup2(CH_READ(p1, 17), 62));
+                    ASSERT_SYS_OK(dup2(CH_READ(p1, 17), READ_DEADLOCK));
                 ASSERT_SYS_OK(close(CH_READ(p1, 17)));
                 ASSERT_SYS_OK(close(CH_WRITE(p1, 17)));
             }

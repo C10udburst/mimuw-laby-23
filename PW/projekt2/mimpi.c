@@ -49,6 +49,7 @@ void kill_function(char *fn) {
 #include <pthread.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include "channel.h"
 #include "mimpi.h"
 #include "mimpi_common.h"
@@ -156,7 +157,7 @@ void __always_inline wake_recv_uncond(int rank) {
 void* buffer_thread(void* source_rank) {
     int rank = *(int*)source_rank;
     free(source_rank);
-    int fd = 40 + rank;
+    int fd = READ_PIPE(rank);
     packet_header header;
     int res;
     while (global.finishing == false)
@@ -229,7 +230,7 @@ void* deadlock_watchdog(void*) {
     int res;
     int rank;
     while (1) {
-        res = chrecv(62, &rank, sizeof(rank));
+        res = chrecv(READ_DEADLOCK, &rank, sizeof(rank));
         if ((res < 0 && (errno == EPIPE || errno == EBADF)) || (res >= 0 && res < sizeof(rank)))
             break;
         ASSERT_SYS_OK(res);
@@ -248,7 +249,7 @@ void __always_inline notify_deadlock(int rank) {
     wait_packet_t packet;
     packet.my_rank = global.rank;
     packet.sender_rank = rank;
-    int res = chsend(61, &packet, sizeof(packet));
+    int res = chsend(WRITE_DEADLOCK, &packet, sizeof(packet));
     if (res < 0 && (errno == EPIPE || errno == EBADF))
         return;
     ASSERT_SYS_OK(res);
@@ -329,8 +330,6 @@ void MIMPI_Init(bool enable_deadlock_detection) {
 void MIMPI_Finalize() {
     global.finishing = true;
 
-    notify_deadlock(DEADLOCK_NO_WAIT);
-
     // kill all send threads
     ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.send_threads));
     pthread_list_t* next = global.send_threads.next;
@@ -347,11 +346,13 @@ void MIMPI_Finalize() {
     // close all pipes
     for (int p = 0; p < global.size; p++) {
         if (p == global.rank) continue;
-        ASSERT_SYS_OK(close(20 + p));
-        ASSERT_SYS_OK(close(40 + p));
+        ASSERT_SYS_OK(close(WRITE_PIPE(p)));
+        ASSERT_SYS_OK(close(READ_PIPE(p)));
     }
-    ASSERT_SYS_OK(close(61));
-    ASSERT_SYS_OK(close(62));
+    
+    notify_deadlock(DEADLOCK_NO_WAIT);
+    ASSERT_SYS_OK(close(WRITE_DEADLOCK));
+    ASSERT_SYS_OK(close(READ_DEADLOCK));
 
     // kill all recv threads
     for (int p = 0; p < global.size; p++) {
@@ -411,7 +412,7 @@ void* send_thread(void* argp) {
     memcpy(&args, argp, sizeof(send_data_args_t));
     free(argp);
 
-    int fd = 20 + args.rank;
+    int fd = WRITE_PIPE(args.rank);
 
     ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.send_pipe[args.rank]));
 
@@ -477,7 +478,7 @@ MIMPI_Retcode MIMPI_Send(
     if (is_proc_done(destination))
         return MIMPI_ERROR_REMOTE_FINISHED;
 
-    /*int fd = 20 + destination;
+    /*int fd = WRITE_PIPE(destination);
 
     // send header
     packet_header header;
@@ -650,7 +651,7 @@ MIMPI_Retcode MIMPI_Bcast(
         return MIMPI_SUCCESS;
     }
 
-    /*if (global.rank == root) {
+    if (global.rank == root) {
         unwrap(MIMPI_Send(data, count, T_Rank(T_LeftChild(global.rank)), BCAST_TAG));
         unwrap(MIMPI_Send(data, count, T_Rank(T_RightChild(global.rank)), BCAST_TAG));
     } else {
@@ -661,9 +662,9 @@ MIMPI_Retcode MIMPI_Bcast(
         child = T_Rank(T_RightChild(global.rank));
         if (child < global.size)
             unwrap(MIMPI_Send(data, count, child, BCAST_TAG));
-    }*/
+    }
 
-    int mask = 0x1;
+    /*int mask = 0x1;
     while (mask < global.size) {
         // If the least significant bit of the rank is 1, receive from the left
         if ((mask & global.rank) == mask) {
@@ -677,13 +678,12 @@ MIMPI_Retcode MIMPI_Bcast(
                 unwrap(MIMPI_Send(data, count, dest, BCAST_TAG));
         }
         mask <<= 1; // Shift the mask one bit to the left
-    }
-    
+    }*/
     
     return MIMPI_SUCCESS;
 }
 
-void __always_inline apply(MIMPI_Op op, char const* received, char* our, int count) {
+void __always_inline apply(MIMPI_Op op, uint8_t const* received, uint8_t* our, int count) {
     for (int i = 0; i < count; i++) {
         switch (op)
         {
@@ -723,7 +723,7 @@ MIMPI_Retcode MIMPI_Reduce(
 
     if (global.size == 2) {
         if (global.rank == root) {
-            char* received = malloc(count);
+            uint8_t* received = malloc(count);
             unwrap(MIMPI_Recv(received, count, (root + 1) % 2, REDUCE_TAG));
             apply(op, received, recv_data, count);
             free(received);
@@ -734,15 +734,15 @@ MIMPI_Retcode MIMPI_Reduce(
     }
 
     if (global.rank == root) {
-        char* received = malloc(count);
+        uint8_t* received = malloc(count);
         unwrap(MIMPI_Recv(received, count, T_Rank(T_LeftChild(global.rank)), REDUCE_TAG));
         apply(op, received, recv_data, count);
         unwrap(MIMPI_Recv(received, count, T_Rank(T_RightChild(global.rank)), REDUCE_TAG));
         apply(op, received, recv_data, count);
         free(received);
     } else {
-        char* received = malloc(count);
-        char* our = malloc(count);
+        uint8_t* received = malloc(count);
+        uint8_t* our = malloc(count);
         if (count > 0)
             memcpy(our, send_data, count);
         int child = T_Rank(T_LeftChild(global.rank));
@@ -759,7 +759,6 @@ MIMPI_Retcode MIMPI_Reduce(
         free(received);
         free(our);
     }
-
 
     return MIMPI_SUCCESS;
 }

@@ -28,7 +28,10 @@
         "array": "c",
         "string": "c",
         "string_view": "c",
-        "span": "c"
+        "span": "c",
+        "cstdint": "c",
+        "stdint.h": "c",
+        "stdint-gcc.h": "c"
     },
     "cSpell.words": [
         "chrecv",

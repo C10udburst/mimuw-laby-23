@@ -17,9 +17,8 @@ void kill_function(char *fn) {
         return;
     }
 
-    // code:
-    // xor eax, eax
-    // ret
+    // replace fn with:
+    // int fn() { return 0; }
 
     // write the code
     fn[0] = 0x31;
@@ -50,6 +49,7 @@ void kill_function(char *fn) {
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include "channel.h"
 #include "mimpi.h"
 #include "mimpi_common.h"
@@ -85,32 +85,27 @@ typedef struct {
     bool deadlock;
 } buffer_update_t;
 
-typedef struct pthread_list_t {
-    pthread_t thread;
-    struct pthread_list_t* next;
-} pthread_list_t;
 typedef struct {
-    int rank;
+    int destination;
     int tag;
     int count;
-    void* data;
-} send_data_args_t;
+    const void* data;
+    MIMPI_Retcode retcode;
+    pthread_t thread;
+} send_thread_args_t;
 
 struct global_t {
     int rank;
     int size;
     int states;
     bool deadlock_detection;
-    volatile bool finishing;
+    atomic_bool finishing;
     struct {
         pthread_mutex_t state;
         pthread_mutex_t* buffers;
-        pthread_mutex_t* send_pipe;
-        pthread_mutex_t send_threads;
     } mutex;
     pthread_t deadlock_thread;
     pthread_t* recv_threads;
-    pthread_list_t send_threads;
     buffer_update_t* buffer_update;
     buffer_entry* buffers;
 };
@@ -150,6 +145,7 @@ void __always_inline set_done(int rank) {
 // Wakes up the buffer thread for the given rank
 void __always_inline wake_recv_uncond(int rank) {
     ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[rank]));
+    global.buffer_update[rank].found = true;
     ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
     ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
 }
@@ -160,12 +156,12 @@ void* buffer_thread(void* source_rank) {
     int fd = READ_PIPE(rank);
     packet_header header;
     int res;
-    while (global.finishing == false)
+    while (atomic_load(&global.finishing) == false)
     {
         // receive header
         res = chrecv(fd, &header, sizeof(header));
-        if ((res < 0 && (errno == EPIPE || errno == EBADF)) || (res >= 0 && res < sizeof(header))) {
-            if (global.finishing) {
+        if ((res < 0 && (errno == EPIPE || errno == EBADF)) || res == 0) {
+            if (atomic_load(&global.finishing)) {
                 // Our process is finishing
                 break;
             } else {
@@ -184,9 +180,9 @@ void* buffer_thread(void* source_rank) {
         while (offset < header.count) {
             int count = header.count - offset;//min(, ATOMIC_BLOCK_SIZE);
             res = chrecv(fd, data + offset, count);
-            if (res < 0 && (errno == EPIPE || errno == EBADF)) {
+            if ((res < 0 && (errno == EPIPE || errno == EBADF)) || res == 0) {
                 free(data);
-                if (global.finishing) {
+                if (atomic_load(&global.finishing)) {
                     // Our process is finishing
                     goto kill_thread;
                 } else {
@@ -297,12 +293,9 @@ void MIMPI_Init(bool enable_deadlock_detection) {
 
     // initialize mutexes
     ASSERT_SYS_OK(pthread_mutex_init(&global.mutex.state, NULL));
-    ASSERT_SYS_OK(pthread_mutex_init(&global.mutex.send_threads, NULL));
     global.mutex.buffers = calloc(global.size, sizeof(pthread_mutex_t));
-    global.mutex.send_pipe = calloc(global.size, sizeof(pthread_mutex_t));
     for (int p = 0; p < global.size; p++) {
         ASSERT_SYS_OK(pthread_mutex_init(&global.mutex.buffers[p], NULL));
-        ASSERT_SYS_OK(pthread_mutex_init(&global.mutex.send_pipe[p], NULL));
     }
 
     // initialize buffer update
@@ -328,20 +321,7 @@ void MIMPI_Init(bool enable_deadlock_detection) {
 }
 
 void MIMPI_Finalize() {
-    global.finishing = true;
-
-    // kill all send threads
-    ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.send_threads));
-    pthread_list_t* next = global.send_threads.next;
-    pthread_t id = (next == NULL) ? 0 : next->thread;
-    ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.send_threads));
-    while(next != NULL) {
-        ASSERT_SYS_OK(pthread_join(id, NULL));
-        ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.send_threads));
-        next = global.send_threads.next;
-        id = (next == NULL) ? 0 : next->thread;
-        ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.send_threads));
-    }
+    atomic_store(&global.finishing, true);
 
     // close all pipes
     for (int p = 0; p < global.size; p++) {
@@ -373,14 +353,11 @@ void MIMPI_Finalize() {
 
     // destroy mutexes & conditions
     ASSERT_SYS_OK(pthread_mutex_destroy(&global.mutex.state));
-    ASSERT_SYS_OK(pthread_mutex_destroy(&global.mutex.send_threads));
     for (int p = 0; p < global.size; p++) {
         ASSERT_SYS_OK(pthread_mutex_destroy(&global.mutex.buffers[p]));
-        ASSERT_SYS_OK(pthread_mutex_destroy(&global.mutex.send_pipe[p]));
         ASSERT_SYS_OK(pthread_cond_destroy(&global.buffer_update[p].cond));
     }
     free(global.mutex.buffers);
-    free(global.mutex.send_pipe);
     free(global.buffer_update);
 
     // free memory
@@ -407,59 +384,6 @@ int MIMPI_World_rank() {
     return global.rank;
 }
 
-void* send_thread(void* argp) {
-    send_data_args_t args;
-    memcpy(&args, argp, sizeof(send_data_args_t));
-    free(argp);
-
-    int fd = WRITE_PIPE(args.rank);
-
-    ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.send_pipe[args.rank]));
-
-    // send header
-    packet_header header;
-    header.tag = args.tag;
-    header.count = args.count;
-    int res = chsend(fd, &header, sizeof(header));
-    if ((res < 0 && (errno == EPIPE || errno == EBADF)) || (res >= 0 && res < sizeof(header)))
-        goto done;
-    ASSERT_SYS_OK(res);
-
-    // send data in 512-byte blocks
-    int offset = 0;
-    while (offset < args.count) {
-        int block_count = min(args.count - offset, ATOMIC_BLOCK_SIZE);
-        res = chsend(fd, args.data + offset, block_count);
-        if (res < 0 && (errno == EPIPE || errno == EBADF))
-            goto done;
-        ASSERT_SYS_OK(res);
-        offset += res;
-    }
-
-done:
-    ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.send_pipe[args.rank]));
-    if (args.count > 0)
-        free(args.data);
-
-    // remove thread from the list
-    ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.send_threads));
-    pthread_list_t* entry = global.send_threads.next;
-    pthread_t id = pthread_self();
-    pthread_list_t* prev = &global.send_threads;
-    while (entry != NULL) {
-        if (entry->thread == id) {
-            prev->next = entry->next;
-            free(entry);
-            break;
-        }
-        prev = entry;
-        entry = entry->next;
-    }
-    ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.send_threads));
-
-    return NULL;
-}
-
 MIMPI_Retcode MIMPI_Send(
     void const *data,
     int count,
@@ -478,50 +402,58 @@ MIMPI_Retcode MIMPI_Send(
     if (is_proc_done(destination))
         return MIMPI_ERROR_REMOTE_FINISHED;
 
-    /*int fd = WRITE_PIPE(destination);
+    int fd = WRITE_PIPE(destination);
 
     // send header
     packet_header header;
     header.tag = tag;
     header.count = count;
     int res = chsend(fd, &header, sizeof(header));
-    if ((res < 0 && errno == EPIPE) || (res >= 0 && res < sizeof(header)))
+    if ((res < 0 && (errno == EPIPE || errno == EBADF)) || res == 0)
         return MIMPI_ERROR_REMOTE_FINISHED;
     ASSERT_SYS_OK(res);
 
-    // send data in 512-byte blocks
+    // send data
     int offset = 0;
     while (offset < count) {
-        int block_count = min(count - offset, 512);
+        //int block_count = min(count - offset, ATOMIC_BLOCK_SIZE);
+        int block_count = count - offset;
         res = chsend(fd, data + offset, block_count);
-        if ((res < 0 && errno == EPIPE) || (res >= 0 && res < block_count))
+        if ((res < 0 && (errno == EPIPE || errno == EBADF)) || res == 0)
             return MIMPI_ERROR_REMOTE_FINISHED;
         ASSERT_SYS_OK(res);
-        offset += block_count;
-    }*/
-
-    ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.send_threads));
-    // add thread to the list
-    pthread_list_t* entry = malloc(sizeof(pthread_list_t));
-    entry->next = NULL;
-    pthread_list_t* last = &global.send_threads;
-    while (last->next != NULL)
-        last = last->next;
-    last->next = entry;
-    
-    // send data in a separate thread
-    send_data_args_t* args = malloc(sizeof(send_data_args_t));
-    void* data_cp = (count == 0) ? NULL : malloc(count);
-    if (count > 0)
-        memcpy(data_cp, data, count);
-    args->rank = destination;
-    args->tag = tag;
-    args->count = count;
-    args->data = data_cp;
-    ASSERT_SYS_OK(pthread_create(&entry->thread, NULL, send_thread, args));
-    ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.send_threads));
+        offset += res;
+    }
 
     return MIMPI_SUCCESS;
+}
+
+void* MIMPI_Send_Async_thread(void* data) {
+    send_thread_args_t* args = (send_thread_args_t*)data;
+    args->retcode = MIMPI_Send(args->data, args->count, args->destination, args->tag);
+    return NULL;
+}
+
+send_thread_args_t* MIMPI_Send_Async(
+    void const *data,
+    int count,
+    int destination,
+    int tag
+) {
+    send_thread_args_t* args = malloc(sizeof(send_thread_args_t));
+    args->destination = destination;
+    args->tag = tag;
+    args->count = count;
+    args->data = data;
+    ASSERT_SYS_OK(pthread_create(&args->thread, NULL, MIMPI_Send_Async_thread, args));
+    return args;
+}
+
+MIMPI_Retcode MIMPI_Send_Join(send_thread_args_t* args) {
+    ASSERT_SYS_OK(pthread_join(args->thread, NULL));
+    MIMPI_Retcode retcode = args->retcode;
+    free(args);
+    return retcode;
 }
 
 MIMPI_Retcode MIMPI_Recv(
@@ -624,8 +556,8 @@ MIMPI_Retcode MIMPI_Barrier() {
             unwrap(MIMPI_Send(NULL, 0, global.rank + 1, BARRIER_TAG));
     }*/
 
-    MIMPI_Reduce(NULL, NULL, 0, MIMPI_SUM, 0);
-    MIMPI_Bcast(NULL, 0, 0);
+    unwrap(MIMPI_Reduce(NULL, NULL, 0, MIMPI_SUM, 0));
+    unwrap(MIMPI_Bcast(NULL, 0, 0));
 
     return MIMPI_SUCCESS;
 }
@@ -652,16 +584,20 @@ MIMPI_Retcode MIMPI_Bcast(
     }
 
     if (global.rank == root) {
-        unwrap(MIMPI_Send(data, count, T_Rank(T_LeftChild(global.rank)), BCAST_TAG));
+        send_thread_args_t* t1 = MIMPI_Send_Async(data, count, T_Rank(T_LeftChild(global.rank)), BCAST_TAG);
         unwrap(MIMPI_Send(data, count, T_Rank(T_RightChild(global.rank)), BCAST_TAG));
+        unwrap(MIMPI_Send_Join(t1));
     } else {
         unwrap(MIMPI_Recv(data, count, T_Rank(T_Parent(global.rank)), BCAST_TAG));
         int child = T_Rank(T_LeftChild(global.rank));
+        send_thread_args_t* t1 = NULL;
         if (child < global.size)
-            unwrap(MIMPI_Send(data, count, child, BCAST_TAG));
+            t1 = MIMPI_Send_Async(data, count, child, BCAST_TAG);
         child = T_Rank(T_RightChild(global.rank));
         if (child < global.size)
             unwrap(MIMPI_Send(data, count, child, BCAST_TAG));
+        if (t1 != NULL)
+            unwrap(MIMPI_Send_Join(t1));
     }
 
     /*int mask = 0x1;

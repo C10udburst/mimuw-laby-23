@@ -8,13 +8,14 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include "mimpi_common.h"
 #include "channel.h"
-
 
 #define CH_READ(p1, p2) (160 + p1 * (18*2) + p2 * 2)
 #define CH_WRITE(p2, p1) (160 + p1 * (18*2) + p2 * 2 + 1)
 
+atomic_bool deadlock_running = true;
 
 #define SEND_DEADLOCK(to, cause)                                   \
     do {                                                           \
@@ -26,13 +27,13 @@
 void* deadlock_thread(void* wtp) {
     int* wait_table = (int*) wtp;
     wait_packet_t wait_packet;
-    while (1) {
+    while (atomic_load(&deadlock_running)) {
         int res = chrecv(60, &wait_packet, sizeof(wait_packet));
-        if ((res < 0 && errno == EPIPE) || (res >= 0 && res < sizeof(wait_packet)))
+        if ((res < 0 && errno == EPIPE) || res == 0)
             continue;
         ASSERT_SYS_OK(res);
-        //if (wait_packet.my_rank == KILL_DEADLOCK_DETECTOR)
-        //    break;
+        //printf("deadlock: %d waits for %d\n", wait_packet.my_rank, wait_packet.sender_rank);
+        //fflush(stdout);
         wait_table[wait_packet.my_rank] = wait_packet.sender_rank;
         if (wait_packet.sender_rank != DEADLOCK_NO_WAIT && wait_table[wait_packet.sender_rank] == wait_packet.my_rank) {
             SEND_DEADLOCK(wait_packet.my_rank, wait_packet.sender_rank);
@@ -131,7 +132,8 @@ int main(int argc, char **argv) {
 
     while (wait(NULL) > 0); // wait for all children to finish
 
-    pthread_cancel(deadlock_detector);
+    atomic_store(&deadlock_running, false);
+    
     pthread_join(deadlock_detector, NULL);
     free(wait_table);
     channels_finalize();

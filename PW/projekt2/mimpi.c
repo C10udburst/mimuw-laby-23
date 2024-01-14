@@ -82,7 +82,7 @@ typedef struct {
     int count_target;
     volatile bool found;
     pthread_cond_t cond;
-    bool deadlock;
+    volatile bool deadlock;
 } buffer_update_t;
 
 typedef struct {
@@ -108,6 +108,7 @@ struct global_t {
     pthread_t* recv_threads;
     buffer_update_t* buffer_update;
     buffer_entry* buffers;
+    buffer_entry** buffers_ends;
 };
 
 struct global_t global;
@@ -116,12 +117,16 @@ struct global_t global;
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
-// Passes the given MIMPI error code to the caller
-#define unwrap(method)                  \
+// Passes the given MIMPI error code to the caller and run cleanup code
+#define unwrap(method, cleanup)         \
     do {                                \
         MIMPI_Retcode retcode = method; \
-        if (retcode != MIMPI_SUCCESS)   \
+        if (retcode != MIMPI_SUCCESS) { \
+            {                           \
+                cleanup;                \
+            }                           \
             return retcode;             \
+        }                               \
     } while (0)
 
 // checks whether processes with the given ranks (bitmask) have finished
@@ -173,7 +178,6 @@ void* buffer_thread(void* source_rank) {
         }
         ASSERT_SYS_OK(res);
     
-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL); // if we cancel here, we might leak memory
         // receive data
         void* data = (header.count == 0) ? NULL : malloc(header.count);
         int offset = 0;
@@ -205,20 +209,15 @@ void* buffer_thread(void* source_rank) {
 
         // add buffer entry
         ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[rank]));
-        buffer_entry* last = &global.buffers[rank];
-        while (last->next != NULL)
-            last = last->next;
-        last->next = entry;
+        global.buffers_ends[rank]->next = entry;
+        global.buffers_ends[rank] = entry;
         if (global.buffer_update[rank].tag == header.tag && global.buffer_update[rank].count_target == header.count) {
             global.buffer_update[rank].found = true;
             ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
         }
         ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
-
-        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
 kill_thread:
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     return NULL;
 }
 
@@ -227,7 +226,7 @@ void* deadlock_watchdog(void*) {
     int rank;
     while (1) {
         res = chrecv(READ_DEADLOCK, &rank, sizeof(rank));
-        if ((res < 0 && (errno == EPIPE || errno == EBADF)) || (res >= 0 && res < sizeof(rank)))
+        if ((res < 0 && (errno == EPIPE || errno == EBADF)) || res == 0)
             break;
         ASSERT_SYS_OK(res);
         ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[rank]));
@@ -235,7 +234,6 @@ void* deadlock_watchdog(void*) {
         ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
         ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
     }
-
     return NULL;
 }
 
@@ -262,6 +260,8 @@ buffer_entry* pop(int rank, int tag, int count) {
     while (entry != NULL) {
         if (ok_tag(entry->tag, tag) && entry->count == count) {
             prev->next = entry->next;
+            if (entry == global.buffers_ends[rank])
+                global.buffers_ends[rank] = prev;
             //ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[rank]));
             return entry;
         }
@@ -290,6 +290,10 @@ void MIMPI_Init(bool enable_deadlock_detection) {
 
     // initialize buffers
     global.buffers = calloc(global.size, sizeof(buffer_entry));
+    global.buffers_ends = calloc(global.size, sizeof(buffer_entry*));
+    for (int p = 0; p < global.size; p++) {
+        global.buffers_ends[p] = &global.buffers[p];
+    }
 
     // initialize mutexes
     ASSERT_SYS_OK(pthread_mutex_init(&global.mutex.state, NULL));
@@ -337,7 +341,6 @@ void MIMPI_Finalize() {
     // kill all recv threads
     for (int p = 0; p < global.size; p++) {
         if (p == global.rank) continue;
-        pthread_cancel(global.recv_threads[p]);
     }
     for (int p = 0; p < global.size; p++) {
         if (p == global.rank) continue;
@@ -347,7 +350,6 @@ void MIMPI_Finalize() {
 
     // kill deadlock watchdog
     if (global.deadlock_detection) {
-        pthread_cancel(global.deadlock_thread);
         pthread_join(global.deadlock_thread, NULL);
     }
 
@@ -372,6 +374,7 @@ void MIMPI_Finalize() {
         }
     }
     free(global.buffers);
+    free(global.buffers_ends);
 
     channels_finalize();
 }
@@ -490,7 +493,7 @@ MIMPI_Retcode MIMPI_Recv(
 
     global.buffer_update[source].tag = NOWAIT_TAG;
 
-    if (global.buffer_update[source].deadlock) {
+    if (global.buffer_update[source].deadlock && entry == NULL) {
         global.buffer_update[source].deadlock = false;
         ASSERT_SYS_OK(pthread_mutex_unlock(&global.mutex.buffers[source]));
         notify_deadlock(DEADLOCK_NO_WAIT);
@@ -533,31 +536,16 @@ MIMPI_Retcode MIMPI_Barrier() {
         return MIMPI_SUCCESS;
 
     if (global.size == 2) {
-        unwrap(MIMPI_Send(NULL, 0, (global.rank + 1) % 2, BCAST_TAG));
-        unwrap(MIMPI_Recv(NULL, 0, (global.rank + 1) % 2, BCAST_TAG));
+        unwrap(MIMPI_Send(NULL, 0, (global.rank + 1) % 2, BCAST_TAG), {});
+        unwrap(MIMPI_Recv(NULL, 0, (global.rank + 1) % 2, BCAST_TAG), {});
         return MIMPI_SUCCESS;
     }
 
     if (stopped(~0))
         return MIMPI_ERROR_REMOTE_FINISHED;
 
-    /*if (global.rank == 0) {
-        unwrap(MIMPI_Send(NULL, 0, 1, BARRIER_TAG));
-        unwrap(MIMPI_Recv(NULL, 0, global.size - 1, BARRIER_TAG));
-        unwrap(MIMPI_Send(NULL, 0, 1, BARRIER_TAG));
-    } else if (global.rank == global.size - 1) {
-        unwrap(MIMPI_Recv(NULL, 0, global.rank - 1, BARRIER_TAG));
-        unwrap(MIMPI_Send(NULL, 0, 0, BARRIER_TAG));
-    } else {
-        unwrap(MIMPI_Recv(NULL, 0, global.rank - 1, BARRIER_TAG));
-        unwrap(MIMPI_Send(NULL, 0, global.rank + 1, BARRIER_TAG));
-        unwrap(MIMPI_Recv(NULL, 0, global.rank - 1, BARRIER_TAG));
-        if (global.rank + 1 != global.size - 1)
-            unwrap(MIMPI_Send(NULL, 0, global.rank + 1, BARRIER_TAG));
-    }*/
-
-    unwrap(MIMPI_Reduce(NULL, NULL, 0, MIMPI_SUM, 0));
-    unwrap(MIMPI_Bcast(NULL, 0, 0));
+    unwrap(MIMPI_Reduce(NULL, NULL, 0, MIMPI_SUM, 0), {});
+    unwrap(MIMPI_Bcast(NULL, 0, 0), {});
 
     return MIMPI_SUCCESS;
 }
@@ -576,45 +564,35 @@ MIMPI_Retcode MIMPI_Bcast(
     
     if (global.size == 2) {
         if (global.rank == root) {
-            unwrap(MIMPI_Send(data, count, (root + 1) % 2, BCAST_TAG));
+            unwrap(MIMPI_Send(data, count, (root + 1) % 2, BCAST_TAG), {});
         } else {
-            unwrap(MIMPI_Recv(data, count, root, BCAST_TAG));
+            unwrap(MIMPI_Recv(data, count, root, BCAST_TAG), {});
         }
         return MIMPI_SUCCESS;
     }
 
     if (global.rank == root) {
         send_thread_args_t* t1 = MIMPI_Send_Async(data, count, T_Rank(T_LeftChild(global.rank)), BCAST_TAG);
-        unwrap(MIMPI_Send(data, count, T_Rank(T_RightChild(global.rank)), BCAST_TAG));
-        unwrap(MIMPI_Send_Join(t1));
+        unwrap(MIMPI_Send(data, count, T_Rank(T_RightChild(global.rank)), BCAST_TAG), {
+            if (t1 != NULL)
+                MIMPI_Send_Join(t1);
+        });
+        unwrap(MIMPI_Send_Join(t1), {});
     } else {
-        unwrap(MIMPI_Recv(data, count, T_Rank(T_Parent(global.rank)), BCAST_TAG));
+        unwrap(MIMPI_Recv(data, count, T_Rank(T_Parent(global.rank)), BCAST_TAG), {});
         int child = T_Rank(T_LeftChild(global.rank));
         send_thread_args_t* t1 = NULL;
         if (child < global.size)
             t1 = MIMPI_Send_Async(data, count, child, BCAST_TAG);
         child = T_Rank(T_RightChild(global.rank));
         if (child < global.size)
-            unwrap(MIMPI_Send(data, count, child, BCAST_TAG));
+            unwrap(MIMPI_Send(data, count, child, BCAST_TAG), {
+                if (t1 != NULL)
+                    MIMPI_Send_Join(t1);
+            });
         if (t1 != NULL)
-            unwrap(MIMPI_Send_Join(t1));
+            unwrap(MIMPI_Send_Join(t1), {});
     }
-
-    /*int mask = 0x1;
-    while (mask < global.size) {
-        // If the least significant bit of the rank is 1, receive from the left
-        if ((mask & global.rank) == mask) {
-            int source = global.rank - mask;
-            unwrap(MIMPI_Recv(data, count, source, BCAST_TAG));
-        }
-        // If the least significant bit of the rank is 0, send to the right
-        else if ((mask & global.rank) == 0) {
-            int dest = global.rank + mask;
-            if (dest < global.size)
-                unwrap(MIMPI_Send(data, count, dest, BCAST_TAG));
-        }
-        mask <<= 1; // Shift the mask one bit to the left
-    }*/
     
     return MIMPI_SUCCESS;
 }
@@ -660,20 +638,26 @@ MIMPI_Retcode MIMPI_Reduce(
     if (global.size == 2) {
         if (global.rank == root) {
             uint8_t* received = malloc(count);
-            unwrap(MIMPI_Recv(received, count, (root + 1) % 2, REDUCE_TAG));
+            unwrap(MIMPI_Recv(received, count, (root + 1) % 2, REDUCE_TAG), {
+                free(received);
+            });
             apply(op, received, recv_data, count);
             free(received);
         } else {
-            unwrap(MIMPI_Send(send_data, count, root, REDUCE_TAG));
+            unwrap(MIMPI_Send(send_data, count, root, REDUCE_TAG), {});
         }
         return MIMPI_SUCCESS;
     }
 
     if (global.rank == root) {
         uint8_t* received = malloc(count);
-        unwrap(MIMPI_Recv(received, count, T_Rank(T_LeftChild(global.rank)), REDUCE_TAG));
+        unwrap(MIMPI_Recv(received, count, T_Rank(T_LeftChild(global.rank)), REDUCE_TAG), {
+            free(received);
+        });
         apply(op, received, recv_data, count);
-        unwrap(MIMPI_Recv(received, count, T_Rank(T_RightChild(global.rank)), REDUCE_TAG));
+        unwrap(MIMPI_Recv(received, count, T_Rank(T_RightChild(global.rank)), REDUCE_TAG), {
+            free(received);
+        });
         apply(op, received, recv_data, count);
         free(received);
     } else {
@@ -683,15 +667,24 @@ MIMPI_Retcode MIMPI_Reduce(
             memcpy(our, send_data, count);
         int child = T_Rank(T_LeftChild(global.rank));
         if (child < global.size) {
-            unwrap(MIMPI_Recv(received, count, child, REDUCE_TAG));
+            unwrap(MIMPI_Recv(received, count, child, REDUCE_TAG), {
+                free(received);
+                free(our);
+            });
             apply(op, received, our, count);
         }
         child = T_Rank(T_RightChild(global.rank));
         if (child < global.size) {
-            unwrap(MIMPI_Recv(received, count, child, REDUCE_TAG));
+            unwrap(MIMPI_Recv(received, count, child, REDUCE_TAG), {
+                free(received);
+                free(our);
+            });
             apply(op, received, our, count);
         }
-        unwrap(MIMPI_Send(our, count, T_Rank(T_Parent(global.rank)), REDUCE_TAG));
+        unwrap(MIMPI_Send(our, count, T_Rank(T_Parent(global.rank)), REDUCE_TAG), {
+            free(received);
+            free(our);
+        });
         free(received);
         free(our);
     }

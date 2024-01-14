@@ -22,7 +22,7 @@ tmp_file=$(mktemp)
 result=0
 
 if [ -z ${VALGRIND+x} ]; then
-    timeout "$TIMEOUT" ./mimpirun "$NUM_OF_WORKERS" "$@" 2> "$tmp_file" || true
+    timeout "$TIMEOUT" ./mimpirun "$NUM_OF_WORKERS" "$@" 2> "$tmp_file" || result=$?
 else
 
     LC="${TIMEOUT: -1}"
@@ -32,20 +32,17 @@ else
     TIMEOUT=$(echo "$TIMEOUT * 20" | bc)
 
     if [ $(echo "$TIMEOUT > 1000" | bc) = "1" ] ; then
-        echo "SKIPPING TEST::TOO LONG" >&2
-        exit 0
+        timeout "$TIMEOUT" ./mimpirun "$NUM_OF_WORKERS" "$@" 2> "$tmp_file" || result=$?
+    else
+        timeout "$TIMEOUT" valgrind -q --track-origins=yes --trace-children=yes --track-fds=yes --leak-check=full --show-leak-kinds=all ./mimpirun "$NUM_OF_WORKERS" "$@" 2> "$tmp_file" || result=$?
+        NUM_OF_PROGRAMS=$(($NUM_OF_WORKERS+1))
+        test "$(grep -c '==' "$tmp_file")" -ne "0" && result=4
     fi
-
-    timeout "$TIMEOUT" valgrind -q --track-origins=yes --trace-children=yes --track-fds=yes --leak-check=full --show-leak-kinds=all ./mimpirun "$NUM_OF_WORKERS" "$@" 2> "$tmp_file" || true
-    NUM_OF_PROGRAMS=$(($NUM_OF_WORKERS+1))
-    test "$(grep -c '==' "$tmp_file")" -ne "0" && result=4
 fi
-
-
 
 # Check if all workers finished successfully
 # - num of <<success>> is equal to number of created workers
-test "$(grep -c '<<success>>' "$tmp_file")" -ne "$NUM_OF_WORKERS" && result=3
+test "$(grep -c '<<success>>' "$tmp_file")" -ne "$NUM_OF_WORKERS" && test "$result" -ne 124 && result=3
 
 # Check if error has been detected - <<error>> was found in stderr
 grep "<<error>>" "$tmp_file" > /dev/null && result=2

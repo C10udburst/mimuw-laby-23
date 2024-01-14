@@ -50,6 +50,8 @@ _Noreturn extern void fatal(const char* fmt, ...);
 
 //#define KILL_DEADLOCK_DETECTOR -69
 #define DEADLOCK_NO_WAIT -1
+#define DEADLOCK_FINISHED -2
+
 typedef struct {
     int my_rank;
     int sender_rank;

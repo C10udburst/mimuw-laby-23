@@ -224,11 +224,14 @@ kill_thread:
 void* deadlock_watchdog(void*) {
     int res;
     int rank;
-    while (1) {
+    while (atomic_load(&global.finishing) == false) {
         res = chrecv(READ_DEADLOCK, &rank, sizeof(rank));
         if ((res < 0 && (errno == EPIPE || errno == EBADF)) || res == 0)
             break;
         ASSERT_SYS_OK(res);
+        if (rank == DEADLOCK_FINISHED) {
+            break;
+        }
         ASSERT_SYS_OK(pthread_mutex_lock(&global.mutex.buffers[rank]));
         global.buffer_update[rank].deadlock = true;
         ASSERT_SYS_OK(pthread_cond_signal(&global.buffer_update[rank].cond));
@@ -334,7 +337,7 @@ void MIMPI_Finalize() {
         ASSERT_SYS_OK(close(READ_PIPE(p)));
     }
     
-    notify_deadlock(DEADLOCK_NO_WAIT);
+    notify_deadlock(DEADLOCK_FINISHED);
     ASSERT_SYS_OK(close(WRITE_DEADLOCK));
     ASSERT_SYS_OK(close(READ_DEADLOCK));
 

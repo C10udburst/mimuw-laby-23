@@ -35,6 +35,11 @@ void* deadlock_thread(void* wtp) {
         //printf("deadlock: %d waits for %d\n", wait_packet.my_rank, wait_packet.sender_rank);
         //fflush(stdout);
         wait_table[wait_packet.my_rank] = wait_packet.sender_rank;
+        if (wait_packet.sender_rank == DEADLOCK_FINISHED) {
+            wait_table[wait_packet.my_rank] = DEADLOCK_NO_WAIT;
+            SEND_DEADLOCK(wait_packet.my_rank, wait_packet.sender_rank);
+            continue;
+        }
         if (wait_packet.sender_rank != DEADLOCK_NO_WAIT && wait_table[wait_packet.sender_rank] == wait_packet.my_rank) {
             SEND_DEADLOCK(wait_packet.my_rank, wait_packet.sender_rank);
             SEND_DEADLOCK(wait_packet.sender_rank, wait_packet.my_rank);

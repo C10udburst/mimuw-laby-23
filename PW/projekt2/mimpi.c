@@ -410,21 +410,30 @@ MIMPI_Retcode MIMPI_Send(
 
     int fd = WRITE_PIPE(destination);
 
-    // send header
     packet_header header;
     header.tag = tag;
     header.count = count;
-    int res = chsend(fd, &header, sizeof(header));
-    if ((res < 0 && (errno == EPIPE || errno == EBADF)) || res == 0)
+
+    // send first 512 bytes (header + some of the data)
+    int first_chunk_s = min(ATOMIC_BLOCK_SIZE, sizeof(header) + count);
+    void* first_chunk = malloc(first_chunk_s);
+    memcpy(first_chunk, &header, sizeof(header));
+    if (count > 0)
+        memcpy(first_chunk + sizeof(header), data, first_chunk_s - sizeof(header));
+    
+    int res = chsend(fd, first_chunk, first_chunk_s);
+    if ((res < 0 && (errno == EPIPE || errno == EBADF)) || res == 0) {
+        free(first_chunk);
         return MIMPI_ERROR_REMOTE_FINISHED;
+    }
     ASSERT_SYS_OK(res);
 
-    // send data
-    int offset = 0;
+    free(first_chunk);
+
+    // send the rest of the data
+    int offset = res - sizeof(header);
     while (offset < count) {
-        //int block_count = min(count - offset, ATOMIC_BLOCK_SIZE);
-        int block_count = count - offset;
-        res = chsend(fd, data + offset, block_count);
+        res = chsend(fd, data + offset, count - offset);
         if ((res < 0 && (errno == EPIPE || errno == EBADF)) || res == 0)
             return MIMPI_ERROR_REMOTE_FINISHED;
         ASSERT_SYS_OK(res);

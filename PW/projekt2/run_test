@@ -34,7 +34,11 @@ else
     if [ $(echo "$TIMEOUT > 1000" | bc) = "1" ] ; then
         timeout "$TIMEOUT" ./mimpirun "$NUM_OF_WORKERS" "$@" 2> "$tmp_file" || result=$?
     else
-        timeout "$TIMEOUT" valgrind -q --track-origins=yes --trace-children=yes --track-fds=yes --leak-check=full --show-leak-kinds=all ./mimpirun "$NUM_OF_WORKERS" "$@" 2> "$tmp_file" || result=$?
+        if [ -z ${HELGRIND+x } ]; then
+            timeout "$TIMEOUT" valgrind -q --track-origins=yes --trace-children=yes --track-fds=yes --leak-check=full --show-leak-kinds=all ./mimpirun "$NUM_OF_WORKERS" "$@" 2> "$tmp_file" || result=$?
+        else
+            timeout "$TIMEOUT" valgrind -q --tool=helgrind ./mimpirun "$NUM_OF_WORKERS" "$@" 2> "$tmp_file" || result=$?
+        fi
         NUM_OF_PROGRAMS=$(($NUM_OF_WORKERS+1))
         test "$(grep -c '==' "$tmp_file")" -ne "0" && result=4
     fi

@@ -32,7 +32,7 @@ int main(int argc, char** argv)
 {
     foreach_test(elem) {
         if (elem == NULL || elem->test == NULL) continue;
-        if (argc > 1)
+        if (argc > 1 && strcmp(argv[1], "all") != 0)
             if (strcmp(elem->name, argv[1]) != 0) continue;
         for (int i = 0; i < sizeof(queueVTables) / sizeof(QueueVTable); ++i) {
             if (argc > 2)
@@ -41,14 +41,20 @@ int main(int argc, char** argv)
                 QueueVTable Q = queueVTables[i];
                 clock_t start, end;
                 start = clock();
-                if (elem->test(Q)) {
-                    end = clock();
-                    printf("\033[1;34m%s\033[0m on queue type \033[1;34m%s\033[0m \033[1;32mPASSED\033[0m in \033[1;33m%.3lf\033[0ms\n", elem->name, Q.name, (double) (end - start) / CLOCKS_PER_SEC);
-                    return 0;
-                } else {
-                    printf("\033[1;34m%s\033[0m on queue type \033[1;34m%s\033[0m \033[1;31mFAILED\033[0m\n", elem->name, Q.name);
-                    return 1;
+                enum Result res = elem->test(Q);
+                end = clock();
+                switch (res) {
+                    case PASSED:
+                        printf("\033[1;34m%s\033[0m on queue type \033[1;34m%s\033[0m \033[1;32mPASSED\033[0m in \033[1;33m%.3lf\033[0ms\n", elem->name, Q.name, (double) (end - start) / CLOCKS_PER_SEC);
+                        break;
+                    case FAILED:
+                        printf("\033[1;34m%s\033[0m on queue type \033[1;34m%s\033[0m \033[1;31mFAILED\033[0m\n", elem->name, Q.name);
+                        break;
+                    case SKIPPED:
+                        printf("\033[1;34m%s\033[0m on queue type \033[1;34m%s\033[0m \033[1;35mSKIPPED\033[0m\n", elem->name, Q.name);
+                        break;
                 }
+                return res;
             }
         }
     }
@@ -56,15 +62,21 @@ int main(int argc, char** argv)
     int status;
     int passed = 0;
     int failed = 0;
+    int skipped = 0;
     int total = 0;
-
 
     while (wait(&status) != -1) {
         if (WIFEXITED(status)) {
-            if (WEXITSTATUS(status) == 0) {
-                ++passed;
-            } else {
-                ++failed;
+            switch (WEXITSTATUS(status)) {
+                case PASSED:
+                    ++passed;
+                    break;
+                case FAILED:
+                    ++failed;
+                    break;
+                case SKIPPED:
+                    ++skipped;
+                    break;
             }
         } else {
             printf("Child terminated abnormally: \033[1;31m%s\033[0m\n", strerror(WTERMSIG(status)));
@@ -73,7 +85,7 @@ int main(int argc, char** argv)
         ++total;
     }
 
-    printf("Passed: \033[1;32m%d\033[0m (%0.2f%%), Failed: \033[1;31m%d\033[0m, Total: \033[1;33m%d\033[0m", passed, (double)passed * 100 / total, failed, total);
+    printf("Passed: \033[1;32m%d\033[0m, Failed: \033[1;31m%d\033[0m, Skipped: \033[1;35m%d\033[0m, Total: \033[1;33m%d\033[0m", passed, failed, skipped, total);
 
     return 0;
 }

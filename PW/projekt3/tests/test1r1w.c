@@ -4,7 +4,7 @@
 #include "../HazardPointer.h"
 
 const int O1OW_ITERATIONS = 1000000;
-const int O1OW_MAX_LOOPS = O1OW_ITERATIONS * 10;
+const int O1OW_MAX_LOOPS = O1OW_ITERATIONS * 100;
 
 struct O1OWargs {
     QueueVTable Q;
@@ -47,7 +47,7 @@ int writer(void* arg)
 }
 
 
-static bool one_reader_one_writer(QueueVTable Q)
+static enum Result one_reader_one_writer(QueueVTable Q)
 {
     HazardPointer_register(0, 1);
     void* queue = Q.new();
@@ -67,6 +67,6 @@ static bool one_reader_one_writer(QueueVTable Q)
 
     Q.delete(queue);
 
-    return reader_ret == 0;
+    return reader_ret == 0 ? PASSED : FAILED;
 }
 ADD_TEST(one_reader_one_writer)

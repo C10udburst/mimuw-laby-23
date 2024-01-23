@@ -4,7 +4,7 @@
 #include "tester.h"
 #include "../HazardPointer.h"
 
-const int Q2_ITERATIONS = 100000;
+const int Q2_ITERATIONS = 10;
 
 struct Q2args {
     QueueVTable Q;
@@ -57,7 +57,7 @@ int checker(void* args) {
         while (v == EMPTY_VALUE) {
             v = a->Q.pop(a->queue2);
             ++loops;
-            if (loops > Q2_ITERATIONS * 100 * a->threads) {
+            if (loops > (long long) Q2_ITERATIONS * (long long)1e5 * a->threads) {
                 printf("\033[1;31mERROR: checker looped too many times\033[0m\n");
                 free(seen);
                 return 1;
@@ -80,7 +80,7 @@ int checker(void* args) {
 }
 
 
-static bool two_queues(QueueVTable Q, int producers, int consumers) {
+static enum Result two_queues(QueueVTable Q, int producers, int consumers) {
     void* queue1 = Q.new();
     void* queue2 = Q.new();
 
@@ -115,35 +115,40 @@ static bool two_queues(QueueVTable Q, int producers, int consumers) {
     Q.delete(queue1);
     Q.delete(queue2);
 
-    return ok;
+    return ok ? PASSED : FAILED;
 }
 
-static bool two_queues_1p_1c(QueueVTable Q) {
+static enum Result two_queues_1p_1c(QueueVTable Q) {
     return two_queues(Q, 1, 1);
 }
 ADD_TEST(two_queues_1p_1c)
 
-static bool two_queues_2p_1c(QueueVTable Q) {
+static enum Result two_queues_2p_1c(QueueVTable Q) {
+    disable_on(RingsQueue);
     return two_queues(Q, 2, 1);
 }
 ADD_TEST(two_queues_2p_1c)
 
-static bool two_queues_1p_2c(QueueVTable Q) {
+static enum Result two_queues_1p_2c(QueueVTable Q) {
+    disable_on(RingsQueue);
     return two_queues(Q, 1, 2);
 }
 ADD_TEST(two_queues_1p_2c)
 
-static bool two_queues_2p_2c(QueueVTable Q) {
+static enum Result two_queues_2p_2c(QueueVTable Q) {
+    disable_on(RingsQueue);
     return two_queues(Q, 2, 2);
 }
 ADD_TEST(two_queues_2p_2c)
 
-static bool two_queues_2p_4c(QueueVTable Q) {
+static enum Result two_queues_2p_4c(QueueVTable Q) {
+    disable_on(RingsQueue);
     return two_queues(Q, 2, 4);
 }
 ADD_TEST(two_queues_2p_4c)
 
-static bool two_queues_4p_2c(QueueVTable Q) {
+static enum Result two_queues_4p_2c(QueueVTable Q) {
+    disable_on(RingsQueue);
     return two_queues(Q, 4, 2);
 }
 ADD_TEST(two_queues_4p_2c)

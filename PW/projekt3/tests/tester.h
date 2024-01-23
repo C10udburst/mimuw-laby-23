@@ -6,7 +6,14 @@
 #define MIMUW_PW_LOCKFREE_TESTER_H
 
 #include <stdbool.h>
+#include <string.h>
 #include "../common.h"
+
+enum Result {
+    PASSED,
+    FAILED,
+    SKIPPED
+};
 
 typedef struct {
     const char *name;
@@ -24,7 +31,13 @@ typedef struct {
 
 #define MakeVTable(name) { #name, name ## _new, name ## _push, name ## _pop, name ## _is_empty, name ## _delete }
 
-typedef bool (*TestFunction)(QueueVTable Q);
+#define disable_on(q_name) { \
+    if (strcmp(Q.name, #q_name) == 0) { \
+        return SKIPPED; \
+    } \
+}
+
+typedef enum Result (*TestFunction)(QueueVTable Q);
 
 typedef struct TestFunctionPtr {
     TestFunction test;

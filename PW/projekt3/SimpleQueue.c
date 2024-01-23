@@ -1,21 +1,21 @@
 #include <malloc.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
-#include "HazardPointer.h"
 #include "SimpleQueue.h"
 
 struct SimpleQueueNode;
 typedef struct SimpleQueueNode SimpleQueueNode;
 
 struct SimpleQueueNode {
-    SimpleQueueNode* next;
+    _Atomic(SimpleQueueNode*) next;
     Value item;
 };
 
 SimpleQueueNode* SimpleQueueNode_new(Value item)
 {
     SimpleQueueNode* node = (SimpleQueueNode*)malloc(sizeof(SimpleQueueNode));
-    node->next = NULL;
+    atomic_init(&node->next, NULL);
     node->item = item;
     return node;
 }
@@ -66,18 +66,10 @@ void SimpleQueue_push(SimpleQueue* queue, Value item)
 {
     SimpleQueueNode* node = SimpleQueueNode_new(item);
 
-    bool lock_head = false;
-    pthread_mutex_lock(&queue->head_mtx);
     pthread_mutex_lock(&queue->tail_mtx);
-    if (queue->head == queue->tail || queue->head->next == queue->tail)
-        lock_head = true;
-    else 
-        pthread_mutex_unlock(&queue->head_mtx);
-    queue->tail->next = node;
+    atomic_store(&queue->tail->next, node);
     queue->tail = node;
     pthread_mutex_unlock(&queue->tail_mtx);
-    if (lock_head)
-        pthread_mutex_unlock(&queue->head_mtx);
 }
 
 Value SimpleQueue_pop(SimpleQueue* queue)
@@ -88,9 +80,11 @@ Value SimpleQueue_pop(SimpleQueue* queue)
     SimpleQueueNode* node = queue->head->next;
     if (node != NULL) {
         item = node->item;
-        queue->head = node;
+        atomic_store(&queue->head->next, node->next);
     }
     pthread_mutex_unlock(&queue->head_mtx);
+
+    free(node);
 
     return item;
 }
@@ -99,7 +93,7 @@ bool SimpleQueue_is_empty(SimpleQueue* queue)
 {
 
     pthread_mutex_lock(&queue->head_mtx);
-    SimpleQueueNode* node = queue->head->next;
+    SimpleQueueNode* node = atomic_load(&queue->head->next);
     pthread_mutex_unlock(&queue->head_mtx);
 
     return node == NULL;

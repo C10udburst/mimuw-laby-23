@@ -1,3 +1,11 @@
 simpleTester
 tester
 valgrind-out.txt
+multiple_read_multiple_write
+multiple_read_one_write
+one_read_multiple_write
+one_read_one_write
+multiple_read_multiple_write_with_isempty
+multiple_read_one_write_with_isempty
+one_read_multiple_write_with_isempty
+one_read_one_write_with_isempty

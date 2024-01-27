@@ -4,7 +4,7 @@
 #include "tester.h"
 #include "../HazardPointer.h"
 
-const int Q2_ITERATIONS = 10;
+const int Q2_ITERATIONS = 1e3;
 
 struct Q2args {
     QueueVTable Q;
@@ -57,7 +57,7 @@ int checker(void* args) {
         while (v == EMPTY_VALUE) {
             v = a->Q.pop(a->queue2);
             ++loops;
-            if (loops > (long long) Q2_ITERATIONS * (long long)1e5 * a->threads) {
+            if (loops > (long long) Q2_ITERATIONS * 100 * a->threads) {
                 printf("\033[1;31mERROR: checker looped too many times\033[0m\n");
                 free(seen);
                 return 1;

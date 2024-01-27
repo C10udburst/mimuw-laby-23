@@ -74,17 +74,19 @@ void SimpleQueue_push(SimpleQueue* queue, Value item)
 
 Value SimpleQueue_pop(SimpleQueue* queue)
 {
-    Value item = EMPTY_VALUE;
+    Value item;
 
     pthread_mutex_lock(&queue->head_mtx);
-    SimpleQueueNode* node = queue->head->next;
-    if (node != NULL) {
-        item = node->item;
-        atomic_store(&queue->head->next, node->next);
+    SimpleQueueNode* head = atomic_load(&queue->head);
+    SimpleQueueNode* new_head = atomic_load(&head->next);
+    if (new_head == NULL) {
+        pthread_mutex_unlock(&queue->head_mtx);
+        return EMPTY_VALUE;
     }
+    item = new_head->item;
+    atomic_store(&queue->head, new_head);
     pthread_mutex_unlock(&queue->head_mtx);
-
-    free(node);
+    free(head);
 
     return item;
 }

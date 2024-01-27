@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include "../common.h"
+#include "../HazardPointer.h"
 
 enum Result {
     PASSED,

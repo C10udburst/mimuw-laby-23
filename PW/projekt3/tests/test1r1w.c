@@ -3,7 +3,7 @@
 #include "tester.h"
 #include "../HazardPointer.h"
 
-const int O1OW_ITERATIONS = 1000000;
+const int O1OW_ITERATIONS = 1e6;
 const int O1OW_MAX_LOOPS = O1OW_ITERATIONS * 100;
 
 struct O1OWargs {
@@ -11,7 +11,7 @@ struct O1OWargs {
     void* queue;
 };
 
-int reader(void* args)
+int o1o_reader(void* args)
 {
     struct O1OWargs* a = args;
     HazardPointer_register(0, 1);
@@ -36,7 +36,7 @@ int reader(void* args)
 }
 
 
-int writer(void* arg)
+int o1o_writer(void* arg)
 {
     struct O1OWargs* a = arg;
     HazardPointer_register(1, 2);
@@ -57,8 +57,8 @@ static enum Result one_reader_one_writer(QueueVTable Q)
     thrd_t reader_thread;
     thrd_t writer_thread;
 
-    thrd_create(&reader_thread, reader, &args);
-    thrd_create(&writer_thread, writer, &args);
+    thrd_create(&reader_thread, o1o_reader, &args);
+    thrd_create(&writer_thread, o1o_writer, &args);
 
     int reader_ret;
 

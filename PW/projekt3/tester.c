@@ -79,13 +79,13 @@ int main(int argc, char** argv)
                     break;
             }
         } else {
-            printf("Child terminated abnormally: \033[1;31m%s\033[0m\n", strerror(WTERMSIG(status)));
+            printf("Child terminated abnormally: \033[1;31m%s (%d)\033[0m\n", strerror(WTERMSIG(status)), WTERMSIG(status));
             ++failed;
         }
         ++total;
     }
 
-    printf("Passed: \033[1;32m%d\033[0m, Failed: \033[1;31m%d\033[0m, Skipped: \033[1;35m%d\033[0m, Total: \033[1;33m%d\033[0m", passed, failed, skipped, total);
+    printf("Passed: \033[1;32m%d\033[0m (%0.3lf%%), Failed: \033[1;31m%d\033[0m, Skipped: \033[1;35m%d\033[0m, Total: \033[1;33m%d\033[0m", passed, (double) passed*100 / (passed + failed), failed, skipped, total);
 
     return 0;
 }

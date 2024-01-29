@@ -1,5 +1,5 @@
-#define IO_SPEED 0
-#define LOCAL 1
+#define IO_SPEED 1
+#define LOCAL 0
 
 //region Imports
 #include <bits/stdc++.h>
@@ -173,6 +173,40 @@ int main(int argc, char **argv) {
 
     // ------
 
+    int n, m;
+    ordered_set<int> from_start; // we will invert nums to store max at find_by_order(0)
+    ordered_set<int> to_end;
+
+    cin >> n >> m;
+    char c;
+    int l, r;
+    while (m--) {
+        cin >> c >> l >> r;
+        if (c == '+') {
+            if (l == 1) { // from_start
+                from_start.insert(-r);
+            } else { // to_end
+                to_end.insert(l);
+            }
+        } else { // c == '-'
+            if (l == 1) { // from_start
+                from_start.erase(-r);
+            } else { // to_end
+                to_end.erase(l);
+            }
+        }
+        int uncovered = n; // amount of ints not covered by any group
+        if (!from_start.empty()) {
+            int max_from_start = -*from_start.find_by_order(0);
+            uncovered -= max_from_start; // we cover all integers from 1 to max_from_start
+        }
+        if (!to_end.empty()) {
+            int min_to_end = *to_end.find_by_order(0);
+            uncovered -= n - min_to_end + 1; // we cover all integers from min_to_end to n
+        }
+        uncovered = max(uncovered, 0); // edge case: all integers are covered
+        cout << uncovered << endl;
+    }
 
 
     // ------

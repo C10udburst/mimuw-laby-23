@@ -1,5 +1,5 @@
-#define IO_SPEED 0
-#define LOCAL 1
+#define IO_SPEED 1
+#define LOCAL 0
 
 //region Imports
 #include <bits/stdc++.h>
@@ -34,7 +34,7 @@ struct modular
     T val;
     explicit operator T() const { return val; }
     modular() { val = 0; }
-    explicit modular(const long long &v)
+    modular(const long long &v)
     {
         val = (-MOD <= v && v <= MOD) ? v : v % MOD;
         if (val < 0)
@@ -159,7 +159,14 @@ using modint = modular<int, MOD>;
 
 // ------
 
+constexpr int MAXN = 1e6;
 
+enum Mon {
+    NONE = 0,
+    INC,
+    DEC,
+    EQ
+};
 
 // ------
 
@@ -173,7 +180,49 @@ int main(int argc, char **argv) {
 
     // ------
 
+    int n;
+    cin >> n;
 
+    vector<int> ciag(n);
+    vector<Mon> monotonicznosc(n);
+
+    read_vec(ciag, n);
+
+    monotonicznosc[0] = NONE;
+    for (int i = 1; i < n; i++) {
+        if (ciag[i] == ciag[i - 1]) {
+            monotonicznosc[i] = EQ;
+        } else if (ciag[i] > ciag[i - 1]) {
+            monotonicznosc[i] = INC;
+        } else {
+            monotonicznosc[i] = DEC;
+        }
+    }
+
+    int parzyste = 1 - (ciag[0] % 2);
+    int nieparzyste = 1 - parzyste;
+
+    int wynik = 0;
+
+    for (int i = 1; i < n; i++) {
+        if (monotonicznosc[i] == monotonicznosc[i - 1]) {
+            // po dopisaniu nieparzystego elementu ciągi zamienią się parzystością
+            if (ciag[i] % 2 == 1)
+                swap(parzyste, nieparzyste);
+        } else {
+            // zmiana monotoniczności -> nowe ciągi
+            // ciągi zaczynające się na i-1
+            parzyste = 1 - (((ciag[i] % 2) + (ciag[i - 1] % 2)) % 2);
+            nieparzyste = 1 - parzyste;
+        }
+        // parzyste i nieparzyste mają co najmniej 2 elementy
+        wynik += parzyste;
+        // nowe ciągi zaczynające się na i
+        nieparzyste +=   ciag[i] % 2;
+        parzyste += 1 - (ciag[i] % 2);
+    }
+
+    cout << wynik;
 
     // ------
 

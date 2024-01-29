@@ -159,8 +159,6 @@ using modint = modular<int, MOD>;
 
 // ------
 
-
-
 // ------
 
 int main(int argc, char **argv) {
@@ -173,7 +171,22 @@ int main(int argc, char **argv) {
 
     // ------
 
+    int n;
+    cin >> n;
 
+    vector<long long> pair_count(11, 0); // pair_count[k] = | (i, j) : i < j, arr[i] + arr[j] = k |
+    vector<int> count(11, 0); // count[k] = | i : arr[i] = k |
+    int ai;
+    long long total = 0; // |(i, j, k) : i < j < k, arr[i] + arr[j] = arr[k]|
+    while (n--) {
+        cin >> ai;
+        total += pair_count[ai];
+        for (int ak = ai + 1; ak <= 10; ak++)
+            pair_count[ak] += (long long)count[ak - ai];
+        count[ai]++;
+    }
+
+    cout << total;
 
     // ------
 

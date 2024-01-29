@@ -18,8 +18,6 @@ struct RingsQueueNode {
     atomic_int pop_idx;
 };
 
-// TODO RingsQueueNode_new
-
 struct RingsQueue {
     RingsQueueNode* head;
     RingsQueueNode* tail;
@@ -92,23 +90,29 @@ void RingsQueue_push(RingsQueue* queue, Value item)
 Value RingsQueue_pop(RingsQueue* queue)
 {
     pthread_mutex_lock(&queue->pop_mtx);
-    RingsQueueNode* head = atomic_load(&queue->head->next);
-    while (head != NULL) {
-        int pop_idx = atomic_load(&head->pop_idx);
-        if (pop_idx == RING_SIZE) {
-            atomic_store(&queue->head->next, head->next);
-            free(head->buffer);
-            free(head);
-            head = atomic_load(&queue->head->next);
-        } else {
-            Value item = head->buffer[pop_idx];
-            atomic_store(&head->pop_idx, pop_idx + 1);
-            pthread_mutex_unlock(&queue->pop_mtx);
-            return item;
-        }
+    RingsQueueNode* head = queue->head;
+    RingsQueueNode* new_head = atomic_load(&head->next);
+
+    if (new_head == NULL) {
+        pthread_mutex_unlock(&queue->pop_mtx);
+        return EMPTY_VALUE;
+    } else if (atomic_load(&new_head->pop_idx) >= atomic_load(&new_head->push_idx)) {
+        pthread_mutex_unlock(&queue->pop_mtx);
+        return EMPTY_VALUE;
+    } else if (atomic_load(&new_head->pop_idx) + 1 == RING_SIZE) {
+        Value* buffer = new_head->buffer;
+        new_head->buffer = NULL;
+        queue->head = new_head;
+        pthread_mutex_unlock(&queue->pop_mtx);
+        Value item = buffer[RING_SIZE - 1];
+        free(buffer);
+        free(head);
+        return item;
+    } else {
+        int pop_idx = atomic_fetch_add(&head->pop_idx, 1);
+        pthread_mutex_unlock(&queue->pop_mtx);
+        return head->buffer[pop_idx];
     }
-    pthread_mutex_unlock(&queue->pop_mtx);
-    return EMPTY_VALUE;
 }
 
 bool RingsQueue_is_empty(RingsQueue* queue)

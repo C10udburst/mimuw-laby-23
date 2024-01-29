@@ -13,17 +13,18 @@ int _num_threads = -1;
 
 void HazardPointer_register(int thread_id, int num_threads)
 {
-    // TODO
+    _thread_id = thread_id;
+    _num_threads = num_threads;
 }
 
 void HazardPointer_initialize(HazardPointer* hp)
 {
-    // TODO
+    
 }
 
 void HazardPointer_finalize(HazardPointer* hp)
 {
-    // TODO
+
 }
 
 void* HazardPointer_protect(HazardPointer* hp, const _Atomic(void*)* atom)
@@ -38,5 +39,5 @@ void HazardPointer_clear(HazardPointer* hp)
 
 void HazardPointer_retire(HazardPointer* hp, void* ptr)
 {
-    // TODO
+    
 }

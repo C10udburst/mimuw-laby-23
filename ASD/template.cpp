@@ -125,12 +125,12 @@ namespace debug
 {
 
 #ifdef LOCAL
-#define debug(...) _debug(#__VA_ARGS__, __VA_ARGS__)
+#define cerr cout
 #define here                                                 \
     {                                                        \
         cerr << "\n[" __LINE__ << "]\n"; \
     }
-#define cerr cout
+#define debug(...) _debug(#__VA_ARGS__, __VA_ARGS__)
 template <typename _T>
 inline void _debug(const char *s, _T x) { cerr << s << " = " << x << "\n"; }
 template <typename _T, typename... args>
@@ -159,11 +159,7 @@ using modint = modular<int, MOD>;
 
 // ------
 
-struct Group {
-    int start, end;
-    vector<bool> was_inverted;
-    vector<bool> inverted;
-};
+
 
 // ------
 
@@ -177,73 +173,7 @@ int main(int argc, char **argv) {
 
     // ------
 
-    int n, k;
-    cin >> n >> k;
-    string s;
-    cin >> s;
-    vector<pair<int, int>> inv_reqs(k);
-    read_vec(inv_reqs, k);
 
-    sort(all(inv_reqs), [](auto &a, auto &b) {
-        int l1 = a.second - a.first + 1;
-        int l2 = b.second - b.first + 1;
-        // sort by length, bigger first
-        return l1 > l2;
-    });
-
-    unordered_map<int, struct Group> groups; // middle -> group
-
-    for (auto &it: inv_reqs) {
-        if (it.first == it.second)
-            continue;
-        int middle = (it.first + it.second) / 2;
-        if (groups.find(middle) == groups.end()) {
-            int len = it.second - it.first + 1;
-            groups[middle] = {it.first,
-                              it.second,
-                              vector<bool>(len / 2, false),
-                              vector<bool>(len / 2, false)};
-        }
-        groups[middle].was_inverted[it.first - groups[middle].start] = true;
-    }
-
-    for (auto &[_, group]: groups) {
-        if (group.inverted.empty())
-            continue;
-        group.inverted[0] = group.was_inverted[0];
-        for (int i = 1; i < group.inverted.size(); i++)
-            group.inverted[i] = group.was_inverted[i] ^ group.inverted[i - 1];
-    }
-
-    vector<int> inv_idx(n, 0);
-    for (auto &[id, group]: groups) {
-        inv_idx[group.start - 1] = id;
-    }
-
-    for (int i = 0; i < n; i++) {
-        if (inv_idx[i] == 0)
-            cout << s[i];
-        else {
-            auto &group = groups[inv_idx[i]];
-            int middle = inv_idx[i];
-            for (int j = 0; j < group.inverted.size(); j++) {
-                if (group.inverted[j])
-                    cout << s[group.end - j - 1];
-                else
-                    cout << s[group.start + j - 1];
-            }
-            int len = group.end - group.start + 1;
-            if (len % 2 == 1)
-                cout << s[middle - 1];
-            for (int j = (int)group.inverted.size() - 1; j >= 0; j--) {
-                if (group.inverted[j])
-                    cout << s[group.start + j - 1];
-                else
-                    cout << s[group.end - j - 1];
-            }
-            i = group.end - 1;
-        }
-    }
 
     // ------
 

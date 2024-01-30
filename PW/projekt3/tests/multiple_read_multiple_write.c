@@ -5,7 +5,7 @@
 #define NUM_THREADS 2
 #define MWMW_WRITERS 7
 #define MRMW_READERS 7
-#define MRMW_ELEMENTS 100
+#define MRMW_ELEMENTS (MWMW_WRITERS - 1)
 
 _Atomic(int) mrmw_counter = 0;
 

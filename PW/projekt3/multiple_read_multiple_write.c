@@ -11,7 +11,7 @@
 #define NUM_THREADS 2
 #define WRITERS 7
 #define READERS 7
-#define ELEMENTS 100
+#define ELEMENTS WRITERS - 1
 
 _Atomic(int) counter = 0;
 

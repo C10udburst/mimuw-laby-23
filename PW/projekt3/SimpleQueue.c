@@ -77,7 +77,7 @@ Value SimpleQueue_pop(SimpleQueue* queue)
     Value item;
 
     pthread_mutex_lock(&queue->head_mtx);
-    SimpleQueueNode* head = atomic_load(&queue->head);
+    SimpleQueueNode* head = queue->head;
     SimpleQueueNode* new_head = atomic_load(&head->next);
     if (new_head == NULL) {
         pthread_mutex_unlock(&queue->head_mtx);

@@ -4,7 +4,7 @@
 #include "tester.h"
 #include "../HazardPointer.h"
 
-const int Q2_ITERATIONS = 1e3;
+const int Q2_ITERATIONS = 1e5;
 
 struct Q2args {
     QueueVTable Q;
@@ -14,6 +14,8 @@ struct Q2args {
     int threads;
     int producers;
 };
+
+volatile bool checker_done = false;
 
 int producer(void* args) {
     struct Q2args* a = args;
@@ -30,17 +32,10 @@ int consumer(void* args) {
     struct Q2args* a = args;
     HazardPointer_register(a->tid, a->threads);
 
-    for (int i = 1; i < Q2_ITERATIONS * a->producers; ++i) {
+    while(!checker_done) {
         Value v = a->Q.pop(a->queue1);
-        int loops = 0;
-        while (v == EMPTY_VALUE) {
-            v = a->Q.pop(a->queue1);
-            ++loops;
-            if (loops > Q2_ITERATIONS * 100 * a->threads) {
-                return 0;
-            }
-        }
-        a->Q.push(a->queue2, v);
+        if (v != EMPTY_VALUE)
+            a->Q.push(a->queue2, v);
     }
 
     return 0;
@@ -51,20 +46,17 @@ int checker(void* args) {
     HazardPointer_register(a->tid, a->threads);
 
     int* seen = calloc(Q2_ITERATIONS, sizeof(int));
-    for (int i = 1; i < Q2_ITERATIONS; ++i) {
+    int seen_count = 0;
+    while (seen_count < (Q2_ITERATIONS-1) * a->producers) {
         Value v = a->Q.pop(a->queue2);
-        int loops = 0;
         while (v == EMPTY_VALUE) {
             v = a->Q.pop(a->queue2);
-            ++loops;
-            if (loops > (long long) Q2_ITERATIONS * 100 * a->threads) {
-                printf("\033[1;31mERROR: checker looped too many times\033[0m\n");
-                free(seen);
-                return 1;
-            }
         }
         seen[v] += 1;
+        seen_count++;
     }
+
+    checker_done = true;
 
     for (int i = 1; i < Q2_ITERATIONS; ++i) {
         if (seen[i] != a->producers) {

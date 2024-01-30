@@ -74,7 +74,7 @@ void RingsQueue_push(RingsQueue* queue, Value item)
     pthread_mutex_lock(&queue->push_mtx);
     RingsQueueNode* tail = queue->tail;
     int push_idx = atomic_load(&tail->push_idx);
-    if (push_idx == RING_SIZE) {
+    if (push_idx == RING_SIZE || tail->buffer == NULL) {
         RingsQueueNode* new_tail = create_node();
         atomic_store(&tail->next, new_tail);
         queue->tail = new_tail;
@@ -109,9 +109,15 @@ Value RingsQueue_pop(RingsQueue* queue)
         free(head);
         return item;
     } else {
-        int pop_idx = atomic_fetch_add(&head->pop_idx, 1);
+        int pop_idx = atomic_load(&new_head->pop_idx);
+        if (pop_idx == RING_SIZE) {
+            pthread_mutex_unlock(&queue->pop_mtx);
+            return EMPTY_VALUE;
+        }
+        Value item = new_head->buffer[pop_idx++];
+        atomic_store(&new_head->pop_idx, pop_idx);
         pthread_mutex_unlock(&queue->pop_mtx);
-        return head->buffer[pop_idx];
+        return item;
     }
 }
 

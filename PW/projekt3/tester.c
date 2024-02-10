@@ -47,9 +47,20 @@ void timeouts(int sig, siginfo_t *arg, void *ctx)
     exit(1);
 }
 
+int run_within_valgrind (void)
+{
+  char *p = getenv ("LD_PRELOAD");
+  if (p == NULL)
+    return 0;
+  return (strstr (p, "/valgrind/") != NULL ||
+          strstr (p, "/vgpreload") != NULL);
+}
+
 int main(int argc, char** argv)
 {
     sigaction(SIGSEGV, &(struct sigaction){.sa_sigaction = handler, .sa_flags = SA_SIGINFO}, NULL);
+
+    bool is_valgrind = run_within_valgrind();
 
     foreach_test(elem) {
         if (elem == NULL || elem->test == NULL) continue;
@@ -66,7 +77,7 @@ int main(int argc, char** argv)
                     }
                 }
                 sigaction(SIGALRM, &(struct sigaction){.sa_sigaction = timeouts, .sa_flags = SA_SIGINFO}, NULL);
-                alarm(15);
+                alarm(15  * (is_valgrind ? 10 : 1));
                 QueueVTable Q = queueVTables[i];
                 queue_name = Q.name;
                 clock_t start, end;

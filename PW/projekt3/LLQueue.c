@@ -30,11 +30,14 @@ struct LLQueue {
 
 LLQueue* LLQueue_new(void)
 {
-    LLQueue* queue = (LLQueue*)malloc(sizeof(LLQueue));
+    _Atomic(LLQueue*) queue = (LLQueue*)malloc(sizeof(LLQueue));
+
+    HazardPointer_initialize(&queue->hp);
 
     LLNode *dummy = LLNode_new(EMPTY_VALUE);
     queue->head = dummy;
     queue->tail = dummy;
+    HazardPointer_protect(&queue->hp, &dummy);
 
     return queue;
 }
@@ -42,16 +45,18 @@ LLQueue* LLQueue_new(void)
 void LLQueue_delete(LLQueue* queue)
 {
     while (LLQueue_pop(queue) != EMPTY_VALUE);
+    HazardPointer_finalize(&queue->hp);
     free(queue);
 }
 
 void LLQueue_push(LLQueue* queue, Value item)
 {
-    LLNode* node = LLNode_new(item);
+    _Atomic(LLNode*) node = LLNode_new(item);
     LLNode* tail;
     LLNode* next;
 
     while (true) {
+        HazardPointer_protect(&queue->hp, &queue->tail);
         tail = atomic_load(&queue->tail);
         next = atomic_load(&tail->next);
         if (tail == atomic_load(&queue->tail)) {
@@ -74,8 +79,10 @@ Value LLQueue_pop(LLQueue* queue)
     LLNode* next;
 
     while (true) {
+        HazardPointer_protect(&queue->hp, &queue->head);
         head = atomic_load(&queue->head);
         tail = atomic_load(&queue->tail);
+        HazardPointer_protect(&queue->hp, &head->next);
         next = atomic_load(&head->next);
         if (head == atomic_load(&queue->head)) {
             if (head == tail) {
@@ -86,7 +93,7 @@ Value LLQueue_pop(LLQueue* queue)
             } else {
                 Value value = next->item;
                 if (atomic_compare_exchange_strong(&queue->head, &head, next)) {
-                    free(head);
+                    HazardPointer_retire(&queue->hp, head);
                     return value;
                 }
             }

@@ -25,6 +25,7 @@ int producer(void* args) {
         a->Q.push(a->queue1, i);
     }
 
+    free(args);
     return 0;
 }
 
@@ -38,6 +39,7 @@ int consumer(void* args) {
             a->Q.push(a->queue2, v);
     }
 
+    free(args);
     return 0;
 }
 
@@ -81,15 +83,18 @@ static enum Result two_queues(QueueVTable Q, int producers, int consumers) {
     thrd_t threads[producers + consumers + 1];
 
     for (int i = 0; i < producers; ++i) {
-        struct Q2args args = args_base;
-        args.tid = i + 1;
-        thrd_create(&threads[i], producer, &args);
+
+        struct Q2args* args = malloc(sizeof(struct Q2args));
+        memcpy(args, &args_base, sizeof(struct Q2args));
+        args->tid = i + 1;
+        thrd_create(&threads[i], producer, args);
     }
 
     for (int i = 0; i < consumers; ++i) {
-        struct Q2args args = args_base;
-        args.tid = i + producers + 1;
-        thrd_create(&threads[i + producers], consumer, &args);
+        struct Q2args* args = malloc(sizeof(struct Q2args));
+        memcpy(args, &args_base, sizeof(struct Q2args));
+        args->tid = producers + i + 1;
+        thrd_create(&threads[i + producers], consumer, args);
     }
 
     thrd_create(&threads[producers + consumers], checker, &args_base);
@@ -116,31 +121,26 @@ static enum Result two_queues_1p_1c(QueueVTable Q) {
 ADD_TEST(two_queues_1p_1c)
 
 static enum Result two_queues_2p_1c(QueueVTable Q) {
-    disable_on(RingsQueue);
     return two_queues(Q, 2, 1);
 }
 ADD_TEST(two_queues_2p_1c)
 
 static enum Result two_queues_1p_2c(QueueVTable Q) {
-    disable_on(RingsQueue);
     return two_queues(Q, 1, 2);
 }
 ADD_TEST(two_queues_1p_2c)
 
 static enum Result two_queues_2p_2c(QueueVTable Q) {
-    disable_on(RingsQueue);
     return two_queues(Q, 2, 2);
 }
 ADD_TEST(two_queues_2p_2c)
 
 static enum Result two_queues_2p_4c(QueueVTable Q) {
-    disable_on(RingsQueue);
     return two_queues(Q, 2, 4);
 }
 ADD_TEST(two_queues_2p_4c)
 
 static enum Result two_queues_4p_2c(QueueVTable Q) {
-    disable_on(RingsQueue);
     return two_queues(Q, 4, 2);
 }
 ADD_TEST(two_queues_4p_2c)

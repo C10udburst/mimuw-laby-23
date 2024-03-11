@@ -1,0 +1,28 @@
+{
+  "name": "tailwind-html",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "concurrently \"postcss ./src/style.css -o ./src/output.css --watch --verbose\" \"browser-sync start --server 'src' --files 'src/**/*.*'\"",
+    "build": "postcss ./src/style.css -o ./src/output.css --verbose",
+    "format": "prettier src/**/*.{html,css,js} --write"
+  },
+  "keywords": [
+    "tailwindcss starter",
+    "tailwindcss",
+    "tailwind",
+    "starter",
+    "tailwindcss-starter"
+  ],
+  "devDependencies": {
+    "autoprefixer": "^10.4.16",
+    "browser-sync": "^2.29.3",
+    "concurrently": "^8.2.2",
+    "cssnano": "^6.1.0",
+    "postcss": "^8.4.31",
+    "postcss-cli": "^10.1.0",
+    "postcss-import": "^15.1.0",
+    "prettier": "^3.1.0",
+    "prettier-plugin-tailwindcss": "^0.5.7",
+    "tailwindcss": "^3.3.5"
+  }
+}

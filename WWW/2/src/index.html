@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="./output.css" rel="stylesheet" />
+    <title>Tailwind with PostCSS</title>
+  </head>
+  <body
+    class="flex min-h-screen items-center justify-center bg-gray-100 flex-col space-y-4"
+  >
+    <h1 class="text-4xl text-slate-900">Tailwind with PostCSS</h1>
+    <div class="bg-sky-500 text-white p-4 rounded-lg shadow">
+      <p class="text-white text-lg">div with bg-sky-500 and shadow</p>
+    </div>
+
+    <table
+      class="table-auto text-sky-500 border-collapse border border-sky-500"
+    >
+      <thead>
+        <tr>
+          <th class="border-b border-slate-600">Song</th>
+          <th class="border-b border-slate-600">Artist</th>
+          <th class="border-b border-slate-600">Year</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>The Sliding Mr. Bones (Next Stop, Pottersville)</td>
+          <td>Malcolm Lockyer</td>
+          <td>1961</td>
+        </tr>
+        <tr>
+          <td>Witchy Woman</td>
+          <td>The Eagles</td>
+          <td>1972</td>
+        </tr>
+        <tr>
+          <td>Shining Star</td>
+          <td>Earth, Wind, and Fire</td>
+          <td>1975</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <span class="flex items-center space-x-2">
+      <span class="text-slate-900">A dot with animate-ping:</span>
+      <span
+        class="animate-ping inline-flex h-3 w-3 rounded-full bg-sky-500 opacity-75"
+      ></span>
+    </span>
+
+    <div class="flex space-x-4 bg-slate-900 p-4 rounded-lg shadow text-white">
+      <span>A SVG star:</span>
+      <svg
+        class="h-6 w-6 text-sky-500"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 56 56"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="5"
+          d="m25,1 6,17h18l-14,11 5,17-15-10-15,10 5-17-14-11h18z"
+        />
+      </svg>
+    </div>
+
+    <h3 class="text-4xl">Differences between flex variants</h3>
+    <div class="grid grid-cols-2 gap-4">
+      <div
+        class="flex flex-col bg-sky-500 p-4 rounded-lg shadow text-white space-y-4"
+      >
+        <p class="text-white">flex-col</p>
+        <p class="text-white">flex-col</p>
+        <p class="text-white">flex-col</p>
+      </div>
+      <div
+        class="flex flex-row bg-sky-500 p-4 rounded-lg shadow text-white space-x-4"
+      >
+        <p class="text-white">flex-row</p>
+        <p class="text-white">flex-row</p>
+      </div>
+    </div>
+    <div class="flex bg-sky-500 p-4 rounded-lg shadow text-white w-3/4">
+      <div class="flex-none bg-slate-900 w-20 h-20 rounded-lg p-1 m-1">
+        flex-none
+      </div>
+      <div class="flex-auto bg-slate-900 w-20 h-20 rounded-lg p-1 m-1">
+        flex-auto
+      </div>
+    </div>
+  </body>
+</html>

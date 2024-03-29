@@ -38,6 +38,8 @@ endforeach()
 file(GLOB_RECURSE TESTERS "tests/*.c")
 add_executable(tester tester.c ${TESTERS})
 target_link_libraries(tester PRIVATE queues Threads::Threads atomic)
+add_executable(singletest singletest.c ${TESTERS})
+target_link_libraries(singletest PRIVATE queues Threads::Threads atomic)
 
 # run tests with valgrind
 add_custom_target(valgrind

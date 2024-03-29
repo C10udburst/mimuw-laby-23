@@ -25,7 +25,7 @@ struct RingsQueue {
     pthread_mutex_t push_mtx;
 };
 
-RingsQueueNode* create_node(void)
+RingsQueueNode* RingsQueueNode_new(void)
 {
     RingsQueueNode* node = (RingsQueueNode*)malloc(sizeof(RingsQueueNode));
     atomic_init(&node->next, NULL);
@@ -75,7 +75,7 @@ void RingsQueue_push(RingsQueue* queue, Value item)
     RingsQueueNode* tail = queue->tail;
     int push_idx = atomic_load(&tail->push_idx);
     if (push_idx == RING_SIZE || tail->buffer == NULL) {
-        RingsQueueNode* new_tail = create_node();
+        RingsQueueNode* new_tail = RingsQueueNode_new();
         atomic_store(&tail->next, new_tail);
         queue->tail = new_tail;
         tail = new_tail;

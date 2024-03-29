@@ -263,6 +263,19 @@ tester/fast:
 .PHONY : tester/fast
 
 #=============================================================================
+# Target rules for targets named singletest
+
+# Build rule for target.
+singletest: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 singletest
+.PHONY : singletest
+
+# fast build rule for target.
+singletest/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/build
+.PHONY : singletest/fast
+
+#=============================================================================
 # Target rules for targets named valgrind
 
 # Build rule for target.
@@ -611,6 +624,30 @@ simpleTester.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/simpleTester.dir/build.make CMakeFiles/simpleTester.dir/simpleTester.c.s
 .PHONY : simpleTester.c.s
 
+singletest.o: singletest.c.o
+.PHONY : singletest.o
+
+# target to build an object file
+singletest.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/singletest.c.o
+.PHONY : singletest.c.o
+
+singletest.i: singletest.c.i
+.PHONY : singletest.i
+
+# target to preprocess a source file
+singletest.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/singletest.c.i
+.PHONY : singletest.c.i
+
+singletest.s: singletest.c.s
+.PHONY : singletest.s
+
+# target to generate assembly for a file
+singletest.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/singletest.c.s
+.PHONY : singletest.c.s
+
 tester.o: tester.c.o
 .PHONY : tester.o
 
@@ -635,12 +672,40 @@ tester.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tester.c.s
 .PHONY : tester.c.s
 
+tests/mrmw.o: tests/mrmw.c.o
+.PHONY : tests/mrmw.o
+
+# target to build an object file
+tests/mrmw.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/mrmw.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/mrmw.c.o
+.PHONY : tests/mrmw.c.o
+
+tests/mrmw.i: tests/mrmw.c.i
+.PHONY : tests/mrmw.i
+
+# target to preprocess a source file
+tests/mrmw.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/mrmw.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/mrmw.c.i
+.PHONY : tests/mrmw.c.i
+
+tests/mrmw.s: tests/mrmw.c.s
+.PHONY : tests/mrmw.s
+
+# target to generate assembly for a file
+tests/mrmw.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/mrmw.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/mrmw.c.s
+.PHONY : tests/mrmw.c.s
+
 tests/multiple_read_multiple_write.o: tests/multiple_read_multiple_write.c.o
 .PHONY : tests/multiple_read_multiple_write.o
 
 # target to build an object file
 tests/multiple_read_multiple_write.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/multiple_read_multiple_write.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/multiple_read_multiple_write.c.o
 .PHONY : tests/multiple_read_multiple_write.c.o
 
 tests/multiple_read_multiple_write.i: tests/multiple_read_multiple_write.c.i
@@ -649,6 +714,7 @@ tests/multiple_read_multiple_write.i: tests/multiple_read_multiple_write.c.i
 # target to preprocess a source file
 tests/multiple_read_multiple_write.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/multiple_read_multiple_write.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/multiple_read_multiple_write.c.i
 .PHONY : tests/multiple_read_multiple_write.c.i
 
 tests/multiple_read_multiple_write.s: tests/multiple_read_multiple_write.c.s
@@ -657,6 +723,7 @@ tests/multiple_read_multiple_write.s: tests/multiple_read_multiple_write.c.s
 # target to generate assembly for a file
 tests/multiple_read_multiple_write.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/multiple_read_multiple_write.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/multiple_read_multiple_write.c.s
 .PHONY : tests/multiple_read_multiple_write.c.s
 
 tests/multiple_read_one_write.o: tests/multiple_read_one_write.c.o
@@ -665,6 +732,7 @@ tests/multiple_read_one_write.o: tests/multiple_read_one_write.c.o
 # target to build an object file
 tests/multiple_read_one_write.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/multiple_read_one_write.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/multiple_read_one_write.c.o
 .PHONY : tests/multiple_read_one_write.c.o
 
 tests/multiple_read_one_write.i: tests/multiple_read_one_write.c.i
@@ -673,6 +741,7 @@ tests/multiple_read_one_write.i: tests/multiple_read_one_write.c.i
 # target to preprocess a source file
 tests/multiple_read_one_write.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/multiple_read_one_write.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/multiple_read_one_write.c.i
 .PHONY : tests/multiple_read_one_write.c.i
 
 tests/multiple_read_one_write.s: tests/multiple_read_one_write.c.s
@@ -681,6 +750,7 @@ tests/multiple_read_one_write.s: tests/multiple_read_one_write.c.s
 # target to generate assembly for a file
 tests/multiple_read_one_write.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/multiple_read_one_write.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/multiple_read_one_write.c.s
 .PHONY : tests/multiple_read_one_write.c.s
 
 tests/one_read_multiple_write.o: tests/one_read_multiple_write.c.o
@@ -689,6 +759,7 @@ tests/one_read_multiple_write.o: tests/one_read_multiple_write.c.o
 # target to build an object file
 tests/one_read_multiple_write.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/one_read_multiple_write.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/one_read_multiple_write.c.o
 .PHONY : tests/one_read_multiple_write.c.o
 
 tests/one_read_multiple_write.i: tests/one_read_multiple_write.c.i
@@ -697,6 +768,7 @@ tests/one_read_multiple_write.i: tests/one_read_multiple_write.c.i
 # target to preprocess a source file
 tests/one_read_multiple_write.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/one_read_multiple_write.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/one_read_multiple_write.c.i
 .PHONY : tests/one_read_multiple_write.c.i
 
 tests/one_read_multiple_write.s: tests/one_read_multiple_write.c.s
@@ -705,6 +777,7 @@ tests/one_read_multiple_write.s: tests/one_read_multiple_write.c.s
 # target to generate assembly for a file
 tests/one_read_multiple_write.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/one_read_multiple_write.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/one_read_multiple_write.c.s
 .PHONY : tests/one_read_multiple_write.c.s
 
 tests/one_read_one_write_tester.o: tests/one_read_one_write_tester.c.o
@@ -713,6 +786,7 @@ tests/one_read_one_write_tester.o: tests/one_read_one_write_tester.c.o
 # target to build an object file
 tests/one_read_one_write_tester.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/one_read_one_write_tester.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/one_read_one_write_tester.c.o
 .PHONY : tests/one_read_one_write_tester.c.o
 
 tests/one_read_one_write_tester.i: tests/one_read_one_write_tester.c.i
@@ -721,6 +795,7 @@ tests/one_read_one_write_tester.i: tests/one_read_one_write_tester.c.i
 # target to preprocess a source file
 tests/one_read_one_write_tester.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/one_read_one_write_tester.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/one_read_one_write_tester.c.i
 .PHONY : tests/one_read_one_write_tester.c.i
 
 tests/one_read_one_write_tester.s: tests/one_read_one_write_tester.c.s
@@ -729,6 +804,7 @@ tests/one_read_one_write_tester.s: tests/one_read_one_write_tester.c.s
 # target to generate assembly for a file
 tests/one_read_one_write_tester.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/one_read_one_write_tester.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/one_read_one_write_tester.c.s
 .PHONY : tests/one_read_one_write_tester.c.s
 
 tests/test1r1w.o: tests/test1r1w.c.o
@@ -737,6 +813,7 @@ tests/test1r1w.o: tests/test1r1w.c.o
 # target to build an object file
 tests/test1r1w.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/test1r1w.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/test1r1w.c.o
 .PHONY : tests/test1r1w.c.o
 
 tests/test1r1w.i: tests/test1r1w.c.i
@@ -745,6 +822,7 @@ tests/test1r1w.i: tests/test1r1w.c.i
 # target to preprocess a source file
 tests/test1r1w.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/test1r1w.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/test1r1w.c.i
 .PHONY : tests/test1r1w.c.i
 
 tests/test1r1w.s: tests/test1r1w.c.s
@@ -753,6 +831,7 @@ tests/test1r1w.s: tests/test1r1w.c.s
 # target to generate assembly for a file
 tests/test1r1w.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/test1r1w.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/test1r1w.c.s
 .PHONY : tests/test1r1w.c.s
 
 tests/twoqueues.o: tests/twoqueues.c.o
@@ -761,6 +840,7 @@ tests/twoqueues.o: tests/twoqueues.c.o
 # target to build an object file
 tests/twoqueues.c.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/twoqueues.c.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/twoqueues.c.o
 .PHONY : tests/twoqueues.c.o
 
 tests/twoqueues.i: tests/twoqueues.c.i
@@ -769,6 +849,7 @@ tests/twoqueues.i: tests/twoqueues.c.i
 # target to preprocess a source file
 tests/twoqueues.c.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/twoqueues.c.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/twoqueues.c.i
 .PHONY : tests/twoqueues.c.i
 
 tests/twoqueues.s: tests/twoqueues.c.s
@@ -777,6 +858,7 @@ tests/twoqueues.s: tests/twoqueues.c.s
 # target to generate assembly for a file
 tests/twoqueues.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/tester.dir/build.make CMakeFiles/tester.dir/tests/twoqueues.c.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/singletest.dir/build.make CMakeFiles/singletest.dir/tests/twoqueues.c.s
 .PHONY : tests/twoqueues.c.s
 
 # Help Target
@@ -798,6 +880,7 @@ help:
 	@echo "... one_read_one_write_with_isempty"
 	@echo "... queues"
 	@echo "... simpleTester"
+	@echo "... singletest"
 	@echo "... tester"
 	@echo "... BLQueue.o"
 	@echo "... BLQueue.i"
@@ -841,9 +924,15 @@ help:
 	@echo "... simpleTester.o"
 	@echo "... simpleTester.i"
 	@echo "... simpleTester.s"
+	@echo "... singletest.o"
+	@echo "... singletest.i"
+	@echo "... singletest.s"
 	@echo "... tester.o"
 	@echo "... tester.i"
 	@echo "... tester.s"
+	@echo "... tests/mrmw.o"
+	@echo "... tests/mrmw.i"
+	@echo "... tests/mrmw.s"
 	@echo "... tests/multiple_read_multiple_write.o"
 	@echo "... tests/multiple_read_multiple_write.i"
 	@echo "... tests/multiple_read_multiple_write.s"

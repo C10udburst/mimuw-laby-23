@@ -17,9 +17,12 @@ struct Q2args {
 
 volatile bool checker_done = false;
 
+volatile bool mrmw_barrier = false;
+
 int producer(void* args) {
     struct Q2args* a = args;
     HazardPointer_register(a->tid, a->threads);
+    while (!mrmw_barrier);
 
     for (int i = 1; i < Q2_ITERATIONS; ++i) {
         a->Q.push(a->queue1, i);
@@ -32,6 +35,7 @@ int producer(void* args) {
 int consumer(void* args) {
     struct Q2args* a = args;
     HazardPointer_register(a->tid, a->threads);
+    while (!mrmw_barrier);
 
     while(!checker_done) {
         Value v = a->Q.pop(a->queue1);
@@ -46,6 +50,7 @@ int consumer(void* args) {
 int checker(void* args) {
     struct Q2args* a = args;
     HazardPointer_register(a->tid, a->threads);
+    while (!mrmw_barrier);
 
     int* seen = calloc(Q2_ITERATIONS, sizeof(int));
     int seen_count = 0;
@@ -75,6 +80,10 @@ int checker(void* args) {
 
 
 static enum Result two_queues(QueueVTable Q, int producers, int consumers) {
+    if (producers + consumers + 1 > MAX_THREADS) {
+        printf("too many threads\n");
+        return SKIPPED;
+    }
     void* queue1 = Q.new();
     void* queue2 = Q.new();
 
@@ -99,6 +108,8 @@ static enum Result two_queues(QueueVTable Q, int producers, int consumers) {
 
     thrd_create(&threads[producers + consumers], checker, &args_base);
 
+    mrmw_barrier = true;
+
     bool ok = true;
 
     for (int i = 0; i < producers + consumers + 1; ++i) {
@@ -114,6 +125,12 @@ static enum Result two_queues(QueueVTable Q, int producers, int consumers) {
 
     return ok ? PASSED : FAILED;
 }
+
+#define two_queues_n(n) \
+    static enum Result two_queues_##n(QueueVTable Q) { \
+        return two_queues(Q, n, n); \
+    } \
+    ADD_TEST(two_queues_##n)
 
 static enum Result two_queues_1p_1c(QueueVTable Q) {
     return two_queues(Q, 1, 1);
@@ -144,3 +161,19 @@ static enum Result two_queues_4p_2c(QueueVTable Q) {
     return two_queues(Q, 4, 2);
 }
 ADD_TEST(two_queues_4p_2c)
+
+static enum Result two_queues_16p_16c(QueueVTable Q) {
+    return two_queues(Q, 16, 16);
+}
+ADD_TEST(two_queues_16p_16c)
+
+two_queues_n(32)
+
+two_queues_n(50)
+
+two_queues_n(64)
+
+two_queues_n(72)
+
+two_queues_n(75)
+

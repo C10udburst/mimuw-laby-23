@@ -11,7 +11,7 @@
 
 thread_local int _thread_id = -1;
 int _num_threads = -1;
-thread_local void* _retired[MAX_THREADS];
+void* _retired[MAX_THREADS][MAX_THREADS];
 thread_local int _retired_count = 0;
 
 void HazardPointer_register(int thread_id, int num_threads)
@@ -33,10 +33,13 @@ void HazardPointer_finalize(HazardPointer* hp)
     for (int i = 0; i < MAX_THREADS; ++i) {
         atomic_store(&hp->pointer[i], NULL);
     }
-    for (int i = 0; i < RETIRED_THRESHOLD; ++i) {
-        free(_retired[i]);
-        _retired[i] = NULL;
+    for (int t = 0; t < MAX_THREADS; ++t) {
+        for (int i = 0; i < RETIRED_THRESHOLD; ++i) {
+            free(_retired[t][i]);
+            _retired[t][i] = NULL;
+        }
     }
+
 }
 
 void* HazardPointer_protect(HazardPointer* hp, const _Atomic(void*)* atom)
@@ -59,20 +62,23 @@ void HazardPointer_retire(HazardPointer* hp, void* ptr)
     if (_retired_count >= RETIRED_THRESHOLD) {
         _retired_count = 0;
         for (int i=0; i < RETIRED_THRESHOLD; i++) {
-            void* rptr = _retired[i];
-            _retired[i] = NULL;
+            void* rptr = _retired[_thread_id][i];
+            _retired[_thread_id][i] = NULL;
+            bool can_retire = true;
             for (int j=0; j < _num_threads; j++) {
-                if (rptr == atomic_load(&hp->pointer[j]))
-                    goto cant_retire;
+                if (rptr == atomic_load(&hp->pointer[j])) {
+                    can_retire = false;
+                    break;
+                }
             }
-            free(rptr);
-            cant_retire:
+            if (can_retire)
+                free(rptr);
         }
 
-        _retired[0] = atomic_load(&hp->pointer[_thread_id]);
-        if (_retired[0] != NULL)
+        _retired[_thread_id][0] = atomic_load(&hp->pointer[_thread_id]);
+        if (_retired[_thread_id][0] != NULL)
             _retired_count++;
     }
 
-    _retired[_retired_count++] = ptr;
+    _retired[_thread_id][_retired_count++] = ptr;
 }

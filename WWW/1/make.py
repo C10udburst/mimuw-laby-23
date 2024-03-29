@@ -56,7 +56,7 @@ os.mkdir(DIRECTORY)
 
 env = Environment()
 data = {
-    'top20': fetch_top20()[:5],
+    'top20': fetch_top20(),
     'date': os.popen('date').read(),
     'get_google_results': get_google_results,
     'make_slug': make_slug,

@@ -1,22 +1,37 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link href="./output.css" rel="stylesheet" />
-    <title>Tailwind with PostCSS</title>
-  </head>
-  <body
-    class="flex min-h-screen items-center justify-center bg-gray-100 flex-col space-y-4"
-  >
-    <h1 class="text-4xl text-slate-900">Tailwind with PostCSS</h1>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="./output.css" rel="stylesheet" />
+  <title>Tailwind with PostCSS</title>
+</head>
+
+<body class="grid grid-areas-layout grid-cols-layout grid-rows-layout h-full min-h-screen">
+  <header class="bg-sky-500 w-full text-white p-4 flex items-center justify-between grid-in-header"> 
+    <h1 class="text-4xl flex-auto">Tailwind with PostCSS</h1>
+    <a href="#!" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" class="hover:underline"
+      style="cursor: pointer;">Back to top</a>
+  </header>
+
+  <nav class="bg-slate-900 text-white p-4 shadow h-full grid-in-nav">
+    <h2 class="text-2xl">Sidebar</h2>
+    <ul class="space-y-2">
+      <li><a href="#!" class="hover:underline">Link 1</a></li>
+      <li><a href="#!" class="hover:underline">Link 2</a></li>
+      <li><a href="#!" class="hover:underline">Link 3</a></li>
+      <li><a href="#!" class="hover:underline">Link 4</a></li>
+      <li><a href="#!" class="hover:underline">Link 5</a></li>
+    </ul>
+  </nav>
+
+  <main class="flex items-center justify-center bg-gray-100 flex-col space-y-4 grind-in-main p-4">
     <div class="bg-sky-500 text-white p-4 rounded-lg shadow">
       <p class="text-white text-lg">div with bg-sky-500 and shadow</p>
     </div>
 
-    <table
-      class="table-auto text-sky-500 border-collapse border border-sky-500"
-    >
+    <table class="table-auto text-sky-500 border-collapse border border-sky-500">
       <thead>
         <tr>
           <th class="border-b border-slate-600">Song</th>
@@ -45,41 +60,26 @@
 
     <span class="flex items-center space-x-2">
       <span class="text-slate-900">A dot with animate-ping:</span>
-      <span
-        class="animate-ping inline-flex h-3 w-3 rounded-full bg-sky-500 opacity-75"
-      ></span>
+      <span class="animate-ping inline-flex h-3 w-3 rounded-full bg-sky-500 opacity-75"></span>
     </span>
 
     <div class="flex space-x-4 bg-slate-900 p-4 rounded-lg shadow text-white">
       <span>A SVG star:</span>
-      <svg
-        class="h-6 w-6 text-sky-500"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 56 56"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="5"
-          d="m25,1 6,17h18l-14,11 5,17-15-10-15,10 5-17-14-11h18z"
-        />
+      <svg class="h-6 w-6 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 56 56"
+        xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="5"
+          d="m25,1 6,17h18l-14,11 5,17-15-10-15,10 5-17-14-11h18z" />
       </svg>
     </div>
 
     <h3 class="text-4xl">Differences between flex variants</h3>
     <div class="grid grid-cols-2 gap-4">
-      <div
-        class="flex flex-col bg-sky-500 p-4 rounded-lg shadow text-white space-y-4"
-      >
+      <div class="flex flex-col bg-sky-500 p-4 rounded-lg shadow text-white space-y-4">
         <p class="text-white">flex-col</p>
         <p class="text-white">flex-col</p>
         <p class="text-white">flex-col</p>
       </div>
-      <div
-        class="flex flex-row bg-sky-500 p-4 rounded-lg shadow text-white space-x-4"
-      >
+      <div class="flex flex-row bg-sky-500 p-4 rounded-lg shadow text-white space-x-4">
         <p class="text-white">flex-row</p>
         <p class="text-white">flex-row</p>
       </div>
@@ -92,5 +92,17 @@
         flex-auto
       </div>
     </div>
-  </body>
+  </main>
+
+  <footer class="bg-sky-500 text-white p-4 text-center grid-in-footer">
+    <p>Footer</p>
+    <div class="flex justify-center space-x-4">
+      <a href="#!" class="hover:underline">Link 1</a>
+      <a href="#!" class="hover:underline">Link 2</a>
+      <a href="#!" class="hover:underline">Link 3</a>
+    </div>
+  </footer>
+
+</body>
+
 </html>

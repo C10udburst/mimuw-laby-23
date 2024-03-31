@@ -7,7 +7,8 @@
 
 namespace PPCB {
 
-    // region Packet
+    const bool IS_DEBUG = true;
+
     enum class PacketType : char {
         CONN = 1,
         CONNACC = 2,
@@ -17,67 +18,45 @@ namespace PPCB {
         RJT = 6,
         RCVD = 7
     };
-    static_assert(sizeof(PacketType) == 1, "PacketType must be 1 byte long");
+    static_assert(sizeof(PacketType) == 1 || !IS_DEBUG, "PacketType must be 1 byte long");
 
-    class Packet {
-    public:
-        PacketType type;
-        uint64_t session_id;
-
-        Packet(PacketType type, uint64_t session_id) : type(type), session_id(session_id) {}
-
-        virtual ~Packet() = default;
-
-        void *serialize();
-
-    protected:
-        virtual void serialize_inner(void *buffer);
-
-        virtual size_t packet_size();
-    };
-    Packet *deserialize(void *buffer);
-    // endregion
-
-    // region ConnPacket
     enum class ConnType: char {
         TCP = 1,
         UDP = 2,
         UDPR = 3
     };
-    static_assert(sizeof(ConnType) == 1, "ConnType must be 1 byte long");
+    static_assert(sizeof(ConnType) == 1 || !IS_DEBUG, "ConnType must be 1 byte long");
 
-    class ConnPacket : public Packet {
-    public:
-        ConnType conn_type;
-        uint64_t length;
+    struct Packet {
+        PacketType type;
+        uint64_t session_id;
+        union {
+            struct {
+                ConnType conn_type;
+                uint64_t length;
+            } conn;
+            struct {
+                uint64_t packet_id;
+                uint32_t data_length;
+                char data[0];
+            } data;
+            struct {
+                uint64_t packet_id;
+            } acc;
+            struct {
+                uint64_t packet_id;
+            } rjt;
+        };
 
-        ConnPacket(PacketType type, uint64_t session_id, ConnType conn_type, uint64_t length) : Packet(type, session_id), conn_type(conn_type), length(length) {}
-
-    protected:
-        void serialize_inner(void *buffer) override;
-
-        size_t packet_size() override;
+        void validate(ssize_t len) const;
+        [[nodiscard]] ssize_t size() const;
+        void print() const;
     };
-    ConnPacket from_string(const std::string &str, uint64_t session_id, uint64_t length);
-    // endregion
 
-    // region DataPacket
-    class DataPacket : public Packet {
-    public:
-        uint64_t seq_num;
-        uint32_t data_length;
-        char *data;
+    const ssize_t MAX_PACKET_SIZE = 64000;
 
-        DataPacket(PacketType type, uint64_t session_id, uint64_t seq_num, uint32_t data_length, char *data) : Packet(type, session_id), seq_num(seq_num), data_length(data_length), data(data) {}
-
-        ~DataPacket() override {
-            free(data);
-        }
-
-    protected:
-        void serialize_inner(void *buffer) override;
-        size_t packet_size() override;
-    };
+    static_assert(sizeof(Packet) <= MAX_PACKET_SIZE || !IS_DEBUG, "Packet header must be smaller than MAX_PACKET_SIZE");
+    static_assert(MAX_PACKET_SIZE <= ((1<<16) - 8 - 20) || !IS_DEBUG, "MAX_PACKET_SIZE must fit into UDP packet");
 }
 
 

@@ -1,99 +1,109 @@
 #include "packets.h"
+#include "common.h"
 #include <stdexcept>
-#include <cstring>
+#include <iostream>
+#include <netinet/in.h>
 
-namespace PPCB {
+ssize_t PPCB::Packet::size() const {
+    if (type == PacketType::DATA)
+        return static_cast<ssize_t>(sizeof(PPCB::Packet) + ntohl(data.data_length));
+    return sizeof(PPCB::Packet);
+}
 
-    void *Packet::serialize() {
-        void *buffer = malloc(packet_size());
-        serialize_inner(buffer);
-        return buffer;
+void PPCB::Packet::validate(ssize_t len) const {
+    if (len < static_cast<ssize_t>(sizeof(PacketType) + sizeof(session_id))) {
+        throw std::runtime_error("Packet too short");
     }
 
-    void Packet::serialize_inner(void *buffer) {}
-
-    size_t Packet::packet_size() {
-        return sizeof(PacketType) + sizeof(uint64_t);
+    if (type < PacketType::CONN || type > PacketType::RCVD) {
+        throw std::runtime_error("Invalid packet type");
     }
-
-    // region ConnPacket
-    ConnType from_string(const std::string &str) {
-        if (str == "tcp") {
-            return ConnType::TCP;
-        } else if (str == "udp") {
-            return ConnType::UDP;
-        } else if (str == "udpr") {
-            return ConnType::UDPR;
-        } else {
-            throw std::invalid_argument("Invalid connection type");
+    if (type == PacketType::DATA) {
+        if (len < static_cast<ssize_t>(sizeof(PacketType) + sizeof(session_id) + sizeof(data.packet_id) +
+                                       sizeof(data.data_length))) {
+            throw std::runtime_error("DATA packet too short");
+        }
+        if (ntohl(data.data_length) > MAX_PACKET_SIZE - sizeof(PacketType) - sizeof(session_id) - sizeof(data.packet_id) -
+                               sizeof(data.data_length)) {
+            throw std::runtime_error("DATA packet too long (data_length too big?)");
+        }
+        if (len < static_cast<ssize_t>(sizeof(PacketType) + sizeof(session_id) + sizeof(data.packet_id) +
+                                       sizeof(data.data_length) + ntohl(data.data_length))) {
+            throw std::runtime_error("DATA packet too short (data too short?)");
         }
     }
 
-    ConnPacket from_string(const std::string &str, uint64_t session_id, uint64_t length) {
-        return ConnPacket(PacketType::CONN, session_id, from_string(str), length);
+    if (size() != len) {
+        throw std::runtime_error("Invalid packet size");
     }
 
-    void ConnPacket::serialize_inner(void *buffer) {
-        memcpy(buffer, &type, sizeof(PacketType));
-        memcpy(static_cast<char *>(buffer) + sizeof(PacketType), &session_id, sizeof(uint64_t));
-        memcpy(static_cast<char *>(buffer) + sizeof(PacketType) + sizeof(uint64_t), &conn_type, sizeof(ConnType));
-        uint64_t length = __builtin_bswap64(this->length);
-        memcpy(static_cast<char *>(buffer) + sizeof(PacketType) + sizeof(uint64_t) + sizeof(ConnType), &length, sizeof(uint64_t));
+    if (type == PacketType::CONN) {
+        if (conn.conn_type < ConnType::TCP || conn.conn_type > ConnType::UDPR) {
+            throw std::runtime_error("Invalid connection type");
+        }
     }
+}
 
-    size_t ConnPacket::packet_size() {
-        return Packet::packet_size() + sizeof(ConnType) + sizeof(uint64_t);
-    }
-    // endregion
+void PPCB::Packet::print() const {
+    if (IS_DEBUG) {
+        std::cout << "Packet{";
 
-    // region Deserialization
-    ConnPacket* deserializeConnPacket(void *buffer);
-    DataPacket* deserializeDataPacket(void *buffer);
-
-    Packet *deserialize(void *buffer) {
-        PacketType type = *static_cast<PacketType *>(buffer);
         switch (type) {
-            case PacketType::CONNACC:
-            case PacketType::CONRJT:
-            case PacketType::RCVD:
-                // These packets don't have any additional data, so we don't need to do anything special
-                uint64_t session_id;
-                memcpy(&session_id, static_cast<char *>(buffer) + sizeof(PacketType), sizeof(uint64_t));
-                return new Packet(type, session_id);
-            case PacketType::CONN:
-                return deserializeConnPacket(buffer);
-            case PacketType::DATA:
-                return deserializeDataPacket(buffer);
+            case PPCB::PacketType::CONN:
+                std::cout << "CONN"; break;
+            case PPCB::PacketType::CONNACC:
+                std::cout << "CONNACC"; break;
+            case PPCB::PacketType::CONRJT:
+                std::cout << "CONRJT"; break;
+            case PPCB::PacketType::DATA:
+                std::cout << "DATA"; break;
+            case PPCB::PacketType::ACC:
+                std::cout << "ACC"; break;
+            case PPCB::PacketType::RJT:
+                std::cout << "RJT"; break;
+            case PPCB::PacketType::RCVD:
+                std::cout << "RCVD"; break;
             default:
-                throw std::invalid_argument("Invalid packet type");
+                std::cout << "UNKNOWN:" << static_cast<int>(type); break;
         }
-        return nullptr;
+
+        std::cout << ", session_id=" << std::hex << session_id << std::dec;
+        if (type == PacketType::CONN) {
+            std::cout << ", conn_type=";
+            switch (conn.conn_type) {
+                case ConnType::TCP:
+                    std::cout << "TCP"; break;
+                case ConnType::UDP:
+                    std::cout << "UDP"; break;
+                case ConnType::UDPR:
+                    std::cout << "UDPR"; break;
+                default:
+                    std::cout << "UNKNOWN:" << static_cast<int>(conn.conn_type);
+            }
+            std::cout << ", length=" << ntohll(conn.length);
+        } else if (type == PacketType::DATA) {
+            std::cout << ", packet_id=" << ntohll(data.packet_id) << ", data_length=" << ntohl(data.data_length) << ", data=\"";
+            for (uint32_t i = 0; i < ntohl(data.data_length) && i < 10; i++) {
+                if (data.data[i] == '\n')
+                    std::cout << "\\n";
+                else if (data.data[i] == '\r')
+                    std::cout << "\\r";
+                else
+                    std::cout << data.data[i];
+            }
+            if (ntohl(data.data_length) > 10) {
+                std::cout << "...";
+            }
+            std::cout << "\"";
+        } else if (type == PacketType::ACC) {
+            std::cout << ", packet_id=" << ntohll(acc.packet_id);
+        } else if (type == PacketType::RJT) {
+            std::cout << ", packet_id=" << ntohll(rjt.packet_id);
+        }
+        std::cout << "}\n";
+    } else {
+        if (type != PacketType::DATA) return;
+        printf("%.*s", ntohl(data.data_length), data.data);
     }
+}
 
-    ConnPacket* deserializeConnPacket(void *buffer)  {
-        uint64_t session_id;
-        memcpy(&session_id, static_cast<char *>(buffer) + sizeof(PacketType), sizeof(uint64_t));
-        ConnType conn_type;
-        memcpy(&conn_type, static_cast<char *>(buffer) + sizeof(PacketType) + sizeof(uint64_t), sizeof(ConnType));
-        uint64_t length;
-        memcpy(&length, static_cast<char *>(buffer) + sizeof(PacketType) + sizeof(uint64_t) + sizeof(ConnType), sizeof(uint64_t));
-        length = __builtin_bswap64(length);
-        return new ConnPacket(PacketType::CONN, session_id, conn_type, length);
-    }
-
-    DataPacket* deserializeDataPacket(void *buffer) {
-        uint64_t session_id;
-        memcpy(&session_id, static_cast<char *>(buffer) + sizeof(PacketType), sizeof(uint64_t));
-        uint64_t seq_num;
-        memcpy(&seq_num, static_cast<char *>(buffer) + sizeof(PacketType) + sizeof(uint64_t), sizeof(uint64_t));
-        uint32_t data_length;
-        memcpy(&data_length, static_cast<char *>(buffer) + sizeof(PacketType) + sizeof(uint64_t) + sizeof(uint64_t), sizeof(uint32_t));
-        data_length = __builtin_bswap32(data_length);
-        char *data = static_cast<char *>(malloc(data_length));
-        memcpy(data, static_cast<char *>(buffer) + sizeof(PacketType) + sizeof(uint64_t) + sizeof(uint64_t) + sizeof(uint32_t), data_length);
-        return new DataPacket(PacketType::DATA, session_id, seq_num, data_length, data);
-    }
-
-    // endregion
-
-} // namespace PPCB

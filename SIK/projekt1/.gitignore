@@ -1,5 +1,7 @@
-ppcb*
-pnc
+# Binaries
+ppcbs
+ppcbc
+ppcat
 
 # Prerequisites
 *.d

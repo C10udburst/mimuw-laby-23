@@ -1,461 +1,319 @@
-#include "packets.h"
-#include "common.h"
-#include "protconst.h"
-#include <iostream>
-#include <cstring>
-#include <sys/socket.h>
 #include <csignal>
+#include <sys/socket.h>
+#include <cstring>
 #include <netinet/in.h>
+#include "server.h"
 
-#define QUEUE_SIZE 5
+void server::handleConnection(const network::Connection &conn, char *buf) {
+    if (ppcb::constants::debug)
+        std::cout << "Handling connection from " << std::hex << conn.session_id << std::dec << std::endl;
 
-class Cleaner {
-public:
-    int sockfd = -1;
-
-    ~Cleaner() {
-        if (sockfd >= 0)
-            close(sockfd);
+    { // send CONNACC
+        ppcb::types::Header connacc{
+                .type = ppcb::types::PacketType::CONNACC,
+                .session_id = conn.session_id,
+        };
+        ppcb::packet::hton_packet(&connacc);
+        network::writen(conn, &connacc, sizeof(connacc));
+        ppcb::packet::print_packet(&connacc, '>');
     }
-};
-
-namespace TcpServer {
-    int tcpServer(uint16_t port, Cleaner &cleaner);
-}
-namespace UdpServer {
-    int udpServer(uint16_t port, Cleaner &cleaner);
-}
-
-
-int main(int argc, char *argv[]) {
-    Cleaner cleaner;
-    if (argc != 3) {
-        std::cerr << "ERROR: Invalid number of arguments\n";
-        return 1;
-    }
-
-    uint16_t port;
-    try {
-        port = read_port(argv[2]);
-    } catch (std::runtime_error &e) {
-        std::cerr << "ERROR: " << e.what() << "\n";
-        return 1;
-    }
-
-    try {
-        if (strcmp(argv[1], "tcp") == 0) {
-            return TcpServer::tcpServer(port, cleaner);
-        } else if (strcmp(argv[1], "udp") == 0) {
-            return UdpServer::udpServer(port, cleaner);
-        } else {
-            std::cerr << "ERROR: Invalid protocol. Must be either 'tcp' or 'udp'\n";
-            return 1;
-        }
-    } catch (std::runtime_error &e) {
-        std::cerr << "ERROR: " << e.what() << "\n";
-        return 1;
-    }
-}
-
-namespace TcpServer {
-
-    void handleTcpConnection(int sockfd, PPCB::Packet connection, char *buffer) {
-
-        connection.conn.length = ntohll(connection.conn.length);
-
-        // send CONNACC
-
-        {
-            PPCB::Packet packet{};
-            packet.type = PPCB::PacketType::CONNACC;
-            packet.session_id = connection.session_id;
-
-            writen(sockfd, &packet, packet.size());
-        }
-
-        while (connection.conn.length > 0) { // receive all data from client
-            ssize_t recv_len = readn(sockfd, buffer, PPCB::MAX_PACKET_SIZE);
-
-            auto *packet = reinterpret_cast<PPCB::Packet *>(buffer);
+    if (conn.type != ppcb::types::ConnType::UDPR) {
+        // no retransmission mode
+        uint64_t packet_id = 0;
+        auto bytes_left = conn.length;
+        while (bytes_left > 0) {
+            ppcb::types::Header* packet;
             try {
-                packet->validate(recv_len);
-            } catch (std::runtime_error &e) {
-                throw std::runtime_error("Invalid packet received: " + std::string(e.what()));
-            }
-
-            packet->print();
-
-            if (packet->session_id != connection.session_id) {
-                // refuse connection from different session
-                if (packet->type == PPCB::PacketType::CONN) {
-                    PPCB::Packet rjtpacket{};
-                    rjtpacket.type = PPCB::PacketType::CONRJT;
-                    rjtpacket.session_id = packet->session_id;
-
-                    writen(sockfd, &rjtpacket, rjtpacket.size());
-                } else if (packet->type == PPCB::PacketType::DATA) {
-                    PPCB::Packet rjtpacket{};
-                    rjtpacket.type = PPCB::PacketType::RJT;
-                    rjtpacket.session_id = packet->session_id;
-                    rjtpacket.rjt.packet_id = packet->data.packet_id;
-
-                    writen(sockfd, &rjtpacket, rjtpacket.size());
-                }
+                packet = network::read_packet(conn, buf);
+                ppcb::packet::print_packet(packet, '<');
+                ppcb::packet::ntoh_packet(packet);
+                if (packet->session_id != conn.session_id)
+                    throw network::exceptions::WrongPeerException();
+                network::expect_packet(conn, ppcb::types::PacketType::DATA, packet);
+            } catch (const network::exceptions::UnexpectedPacketException &e) {
+                send_rjt(conn, buf);
+                continue;
+            } catch (const network::exceptions::WrongPeerException &e) {
+                send_rjt(conn, buf);
                 continue;
             }
-
-            if (packet->type != PPCB::PacketType::DATA) {
-                throw std::runtime_error("Expected DATA packet, got " + std::to_string(static_cast<int>(packet->type)));
+            auto data_packet = reinterpret_cast<ppcb::types::DataPacket *>(packet);
+            if (data_packet->packet_id != packet_id) {
+                throw std::runtime_error("Invalid packet id");
             }
-
-            if (!PPCB::IS_DEBUG)
-                printf("%.*s", ntohl(packet->data.data_length), packet->data.data);
-
-            connection.conn.length -= ntohl(packet->data.data_length);
+            packet_id++;
+            bytes_left -= data_packet->data_length;
+            if (!ppcb::constants::debug) {
+                auto cbuf = reinterpret_cast<char *>(buf);
+                printf("%.*s", data_packet->data_length, cbuf + sizeof(ppcb::types::DataPacket));
+            }
+        }
+    } else {
+        uint64_t packet_id = 0;
+        auto bytes_left = conn.length;
+        while (bytes_left > 0) {
+            ppcb::types::DataPacket* data_packet;
+            if (packet_id == 0) {
+                try {
+                    auto packet = network::read_packet(conn, buf);
+                    ppcb::packet::print_packet(packet, '<');
+                    ppcb::packet::ntoh_packet(packet);
+                    if (packet->session_id != conn.session_id)
+                        throw network::exceptions::WrongPeerException();
+                    network::expect_packet(conn, ppcb::types::PacketType::DATA, packet);
+                    data_packet = reinterpret_cast<ppcb::types::DataPacket *>(packet);
+                    if (data_packet->packet_id != packet_id)
+                        throw std::runtime_error("Invalid packet id");
+                } catch (const network::exceptions::WrongPeerException &e) {
+                    send_rjt(conn, buf);
+                    continue;
+                } catch (const network::exceptions::UnexpectedPacketException &e) {
+                    send_rjt(conn, buf);
+                    continue;
+                }
+            } else {
+                udprReceive(conn, buf, packet_id);
+            }
+            bytes_left -= data_packet->data_length;
+            if (!ppcb::constants::debug) {
+                auto cbuf = reinterpret_cast<char *>(buf);
+                printf("%.*s", data_packet->data_length, cbuf + sizeof(ppcb::types::DataPacket));
+            }
+            packet_id++;
         }
 
-        // send RCVD
-        {
-            PPCB::Packet packet{};
-            packet.type = PPCB::PacketType::RCVD;
-            packet.session_id = connection.session_id;
-
-            writen(sockfd, &packet, packet.size());
-
+        { // send the last acc
+            auto acc = ppcb::types::AccRjtPacket{
+                    .type = ppcb::types::PacketType::ACC,
+                    .session_id = conn.session_id,
+                    .packet_id = packet_id - 1,
+            };
+            auto acc_packet = reinterpret_cast<ppcb::types::Header *>(&acc);
+            ppcb::packet::hton_packet(acc_packet);
+            network::writen(conn, acc_packet, sizeof(acc));
+            ppcb::packet::print_packet(acc_packet, '>');
         }
     }
 
+    { // send RCVD
+        ppcb::types::Header rcvd{
+                .type = ppcb::types::PacketType::RCVD,
+                .session_id = conn.session_id,
+        };
+        ppcb::packet::hton_packet(&rcvd);
+        network::writen(conn, &rcvd, sizeof(rcvd));
+        ppcb::packet::print_packet(&rcvd, '>');
+    }
 
-    int tcpServer(uint16_t port, Cleaner &cleaner) {
-        char buffer[PPCB::MAX_PACKET_SIZE];
+    if (ppcb::constants::debug)
+        std::cout << "Connection from " << std::hex << conn.session_id << std::dec << " handled" << std::endl;
+}
 
-        // Ignore SIGPIPE signals, so they are delivered as normal errors.
-        signal(SIGPIPE, SIG_IGN);
+void server::send_rjt(const network::Connection &conn, void* buf) {
+    auto packet = reinterpret_cast<ppcb::types::Header *>(buf);
+    if (packet->type == ppcb::types::PacketType::CONN) {
+        auto conrjt = ppcb::types::Header{
+                .type = ppcb::types::PacketType::CONRJT,
+                .session_id = packet->session_id,
+        };
+        ppcb::packet::hton_packet(&conrjt);
+        network::writen(conn, &conrjt, sizeof(conrjt));
+        ppcb::packet::print_packet(&conrjt, '>');
+    } else if (packet->type == ppcb::types::PacketType::DATA) {
+        auto data_packet = reinterpret_cast<ppcb::types::DataPacket *>(packet);
+        auto rjt = ppcb::types::AccRjtPacket{
+                .type = ppcb::types::PacketType::RJT,
+                .session_id = packet->session_id,
+                .packet_id = data_packet->packet_id,
+        };
+        auto rjt_packet = reinterpret_cast<ppcb::types::Header *>(&rjt);
+        ppcb::packet::hton_packet(rjt_packet);
+        network::writen(conn, rjt_packet, sizeof(rjt));
+        ppcb::packet::print_packet(rjt_packet, '>');
+    }
+}
 
-        int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-        if (socket_fd < 0) {
-            std::cerr << "ERROR: Could not open socket: " << strerror(errno) << "\n";
-            return 1;
+ppcb::types::Header *server::udprReceive(const network::Connection &conn, void *buf, uint64_t expected_pid) {
+    // we send ACC until we receive the expected packet
+    ppcb::types::AccRjtPacket acc{
+            .type = ppcb::types::PacketType::ACC,
+            .session_id = conn.session_id,
+            .packet_id = expected_pid - 1,
+    };
+    auto packet = reinterpret_cast<ppcb::types::Header *>(&acc);
+    ppcb::packet::hton_packet(packet);
+    for (int i = 0; i < ppcb::constants::max_retransmits; i++) {
+        ssize_t packet_len;
+        try {
+            packet_len = writen(conn, packet, ppcb::packet::sizeof_packetn(packet));
+            ppcb::packet::print_packet(packet, '>');
+        } catch (const network::exceptions::TimeoutException &e) {
+            continue; // if timeout, resend
         }
-        cleaner.sockfd = socket_fd;
+        if (packet_len == 0)
+            throw std::runtime_error("Connection closed");
+        try {
+            auto ack = read_packet(conn, buf);
+            ppcb::packet::print_packet(ack, '<');
+            ppcb::packet::ntoh_packet(ack);
+            if (ack->session_id != packet->session_id)
+                throw network::exceptions::WrongPeerException();
+            network::expect_packet(conn, ppcb::types::PacketType::DATA, ack);
+            auto data_packet = reinterpret_cast<ppcb::types::DataPacket *>(ack);
+            if (data_packet->packet_id < expected_pid)
+                continue; // ignore old packets
+            if (data_packet->packet_id == expected_pid)
+                return ack; // ack->type == ppcb::types::PacketType::DATA && data_packet->packet_id == expected_pid
+        } catch (const network::exceptions::TimeoutException &e) {
+            continue; // if timeout, resend
+        }
+        // if wrong peer, we need to catch, so we can send RJT/CONNRJT
+        catch (const network::exceptions::WrongPeerException &e) { }
+        catch (const network::exceptions::UnexpectedPacketException &e) { }
+        // we know buf has valid packet because otherwise we would have thrown an exception,
+        // but we also know that the packet is not the expected one, so we can send RJT
+        send_rjt(conn, buf);
+    }
+    throw std::runtime_error("Too many retransmits");
+}
 
-        struct sockaddr_in serv_addr{}, cli_addr{};
-        serv_addr.sin_family = AF_INET;
-        serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        serv_addr.sin_port = htons(port);
+int server::tcpServer(uint16_t port) {
+    utils::Cleaner cleaner;
+    char buffer[ppcb::constants::max_packet_size + 8];
 
+    // Ignore SIGPIPE signals, so they are delivered as normal errors.
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+        std::cerr << "ERROR: Could not set signal handler: " << strerror(errno) << "\n";
+        return 1;
+    }
+
+    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_fd < 0) {
+        std::cerr << "ERROR: Could not open socket: " << strerror(errno) << "\n";
+        return 1;
+    }
+
+    cleaner.add_fd(socket_fd);
+
+    struct sockaddr_in serv_addr{}, cli_addr{};
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(port);
+
+    { // bind and listen
         if (bind(socket_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
             std::cerr << "ERROR: Could not bind socket: " << strerror(errno) << "\n";
             return 1;
         }
-
-        if (listen(socket_fd, QUEUE_SIZE) < 0) {
+        if (listen(socket_fd, ppcb::constants::queue_size) < 0) {
             std::cerr << "ERROR: Could not listen on socket: " << strerror(errno) << "\n";
             return 1;
         }
+    }
 
-        ssize_t recv_len;
-        do {
-            socklen_t len = sizeof(cli_addr);
-            int new_socket_fd = accept(socket_fd, (struct sockaddr *) &cli_addr, &len);
-            if (new_socket_fd < 0) {
+    socklen_t clilen = sizeof(cli_addr);
+    int newsockfd;
+    do {
+        try {
+            memset(buffer, 0, sizeof(buffer)); // clear buffer
+
+            newsockfd = accept(socket_fd, (struct sockaddr *) &cli_addr, &clilen);
+            if (newsockfd < 0) {
                 std::cerr << "ERROR: Could not accept connection: " << strerror(errno) << "\n";
                 return 1;
             }
+            cleaner.add_fd(newsockfd);
+            ppcb::conf_sock(newsockfd);
+            auto conn = network::Connection{
+                    .type = ppcb::types::ConnType::TCP,
+                    .length = 0,
+                    .fd = newsockfd,
+                    .session_id = 0xABAB, // dummy value so errors are easier to spot
+                    .peer_addr = reinterpret_cast<struct sockaddr *>(&cli_addr),
+                    .peer_addr_len = clilen,
+                    .is_server = true,
+            };
+            auto packet = network::read_packet(conn, buffer);
+            ppcb::packet::ntoh_packet(packet);
+            ppcb::packet::print_packet(packet, '!');
+            network::expect_packet(conn, ppcb::types::PacketType::CONN, packet);
+            // no need to send rjt, because only way this is wrong is if the client is wrong, so UB
+            auto conn_packet = reinterpret_cast<ppcb::types::ConnPacket *>(packet);
+            if (conn_packet->conn_type != ppcb::types::ConnType::TCP)
+                throw std::runtime_error("Invalid connection type");
+            conn.session_id = packet->session_id;
+            conn.length = conn_packet->length;
 
-            set_sock_timeout(new_socket_fd);
-
-            recv_len = readn(new_socket_fd, buffer, PPCB::MAX_PACKET_SIZE);
-            if (recv_len < 0) {
-                std::cerr << "ERROR: Could not receive data: " << strerror(errno) << "\n";
-                return 1;
-            }
-
-            auto *packet = reinterpret_cast<PPCB::Packet *>(buffer);
-            try {
-                packet->validate(recv_len);
-            } catch (std::runtime_error &e) {
-                std::cerr << "ERROR: Invalid packet received: " << e.what() << "\n";
-                continue;
-            }
-            if (packet->type != PPCB::PacketType::CONN) {
-                std::cerr << "ERROR: Expected CONN packet, got " << static_cast<int>(packet->type) << "\n";
-                continue;
-            }
-            try {
-                PPCB::Packet conn{};
-                memcpy(&conn, packet, sizeof(conn));
-                if (conn.conn.conn_type == PPCB::ConnType::TCP) {
-                    handleTcpConnection(new_socket_fd, conn, buffer);
-                } else {
-                    std::cerr << "ERROR: Invalid connection type: " << static_cast<int>(conn.conn.conn_type) << "\n";
-                    continue;
-                }
-            } catch (std::runtime_error &e) {
-                std::cerr << "ERROR: " << e.what() << "\n";
-                continue;
-            }
-        } while (recv_len > 0);
-
-        return 0;
-    }
+            handleConnection(conn, buffer);
+        } catch (const std::exception &e) {
+            std::cerr << "ERROR: " << e.what() << std::endl;
+        }
+        cleaner.free_fd(newsockfd);
+    } while (true);
 }
 
-namespace UdpServer {
+int server::udpServer(uint16_t port) {
+    utils::Cleaner cleaner;
+    char buffer[ppcb::constants::max_packet_size + 8];
 
-    void handleUdpConnection(int sockfd, PPCB::Packet connection, char *buffer, struct sockaddr_in conn_addr) {
-        struct sockaddr_in cli_addr{};
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        std::cerr << "ERROR: Could not open socket: " << strerror(errno) << "\n";
+        return 1;
+    }
+    cleaner.add_fd(sockfd);
 
-        connection.print();
+    struct sockaddr_in serv_addr{}, cli_addr{};
 
-        connection.conn.length = ntohll(connection.conn.length);
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(port);
 
-        // send CONNACC
-
-        {
-            PPCB::Packet packet{};
-            packet.type = PPCB::PacketType::CONNACC;
-            packet.session_id = connection.session_id;
-
-            if (sendto(sockfd, &packet, packet.size(), 0, (struct sockaddr *) &conn_addr, sizeof(conn_addr)) < 0) {
-                throw std::runtime_error("Could not send CONNACC packet: " + std::string(strerror(errno)));
-            }
-        }
-
-        socklen_t len = sizeof(cli_addr);
-        while (connection.conn.length > 0) {
-            ssize_t recv_len = recvfrom(sockfd, buffer, PPCB::MAX_PACKET_SIZE, 0, (struct sockaddr *) &cli_addr, &len);
-            if (recv_len < 0) {
-                throw std::runtime_error("Could not receive data: " + std::string(strerror(errno)));
-            }
-
-            auto *packet = reinterpret_cast<PPCB::Packet *>(buffer);
-            try {
-                packet->validate(recv_len);
-            } catch (std::runtime_error &e) {
-                throw std::runtime_error("Invalid packet received: " + std::string(e.what()));
-            }
-
-            packet->print();
-
-            if (packet->session_id != connection.session_id || cli_addr.sin_port != conn_addr.sin_port ||
-                cli_addr.sin_addr.s_addr != conn_addr.sin_addr.s_addr) {
-                // refuse connection from different session
-                if (packet->type == PPCB::PacketType::CONN) {
-                    PPCB::Packet rjtpacket{};
-                    rjtpacket.type = PPCB::PacketType::CONRJT;
-                    rjtpacket.session_id = packet->session_id;
-
-                    if (sendto(sockfd, &rjtpacket, rjtpacket.size(), 0, (struct sockaddr *) &cli_addr,
-                               sizeof(cli_addr)) < 0) {
-                        throw std::runtime_error("Could not send CONRJT packet: " + std::string(strerror(errno)));
-                    }
-                } else if (packet->type == PPCB::PacketType::DATA) {
-                    PPCB::Packet rjtpacket{};
-                    rjtpacket.type = PPCB::PacketType::RJT;
-                    rjtpacket.session_id = connection.session_id;
-                    rjtpacket.rjt.packet_id = packet->data.packet_id;
-
-                    if (sendto(sockfd, &rjtpacket, rjtpacket.size(), 0, (struct sockaddr *) &cli_addr,
-                               sizeof(cli_addr)) < 0) {
-                        throw std::runtime_error("Could not send RJT packet: " + std::string(strerror(errno)));
-                    }
-                }
-                continue;
-            }
-
-            if (packet->type != PPCB::PacketType::DATA) {
-                throw std::runtime_error("Expected DATA packet, got " + std::to_string(static_cast<int>(packet->type)));
-            }
-
-            if (!PPCB::IS_DEBUG)
-                printf("%.*s", ntohl(packet->data.data_length), packet->data.data);
-
-            connection.conn.length -= ntohl(packet->data.data_length);
-        }
-
-        // send RCVD
-        {
-            PPCB::Packet packet{};
-            packet.type = PPCB::PacketType::RCVD;
-            packet.session_id = connection.session_id;
-
-            if (sendto(sockfd, &packet, packet.size(), 0, (struct sockaddr *) &conn_addr, sizeof(conn_addr)) < 0) {
-                throw std::runtime_error("Could not send RCVD packet: " + std::string(strerror(errno)));
-            }
-        }
+    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+        std::cerr << "ERROR: Could not bind socket: " << strerror(errno) << "\n";
+        return 1;
     }
 
-    void handleUdprConnection(int sockfd, PPCB::Packet connection, char *buffer, struct sockaddr_in conn_addr) {
-        struct sockaddr_in cli_addr{};
+    socklen_t clilen = sizeof(cli_addr);
+    do {
+        ppcb::reset_sock(sockfd); // revert to infinite timeout
 
-        connection.print();
-
-        connection.conn.length = ntohll(connection.conn.length);
-
-        { // send CONNACC
-            PPCB::Packet packet{};
-            packet.type = PPCB::PacketType::CONNACC;
-            packet.session_id = connection.session_id;
-
-            if (sendto(sockfd, &packet, packet.size(), 0, (struct sockaddr *) &conn_addr, sizeof(conn_addr)) < 0) {
-                throw std::runtime_error("Could not send CONNACC packet: " + std::string(strerror(errno)));
-            }
-        }
-
-        socklen_t len = sizeof(cli_addr);
-        uint64_t packet_id = 0;
-        while (connection.conn.length > 0) {
-            ssize_t recv_len = recvfrom(sockfd, buffer, PPCB::MAX_PACKET_SIZE, 0, (struct sockaddr *) &cli_addr, &len);
-            if (recv_len < 0) {
-                throw std::runtime_error("Could not receive data: " + std::string(strerror(errno)));
-            }
-
-            auto *packet = reinterpret_cast<PPCB::Packet *>(buffer);
-            try {
-                packet->validate(recv_len);
-            } catch (std::runtime_error &e) {
-                throw std::runtime_error("Invalid packet received: " + std::string(e.what()));
-            }
-
-            packet->print();
-
-            if (packet->session_id != connection.session_id || cli_addr.sin_port != conn_addr.sin_port ||
-                cli_addr.sin_addr.s_addr != conn_addr.sin_addr.s_addr) {
-                // refuse connection from different session
-                if (packet->type == PPCB::PacketType::CONN) {
-                    PPCB::Packet rjtpacket{};
-                    rjtpacket.type = PPCB::PacketType::CONRJT;
-                    rjtpacket.session_id = packet->session_id;
-
-                    if (sendto(sockfd, &rjtpacket, rjtpacket.size(), 0, (struct sockaddr *) &cli_addr,
-                               sizeof(cli_addr)) < 0) {
-                        throw std::runtime_error("Could not send CONRJT packet: " + std::string(strerror(errno)));
-                    }
-                }
-                if (packet->type == PPCB::PacketType::DATA) {
-                    PPCB::Packet rjtpacket{};
-                    rjtpacket.type = PPCB::PacketType::RJT;
-                    rjtpacket.session_id = connection.session_id;
-                    rjtpacket.rjt.packet_id = packet->data.packet_id;
-
-                    if (sendto(sockfd, &rjtpacket, rjtpacket.size(), 0, (struct sockaddr *) &cli_addr,
-                               sizeof(cli_addr)) < 0) {
-                        throw std::runtime_error("Could not send RJT packet: " + std::string(strerror(errno)));
-                    }
-                }
-                continue;
-            }
-
-            if (packet->type != PPCB::PacketType::DATA) {
-                throw std::runtime_error("Expected DATA packet, got " + std::to_string(static_cast<int>(packet->type)));
-            }
-
-            if (packet->data.packet_id != packet_id) {
-                // send RJT
-                PPCB::Packet rjtpacket{};
-                rjtpacket.type = PPCB::PacketType::RJT;
-                rjtpacket.session_id = connection.session_id;
-                rjtpacket.rjt.packet_id = packet->data.packet_id;
-
-                if (sendto(sockfd, &rjtpacket, rjtpacket.size(), 0, (struct sockaddr *) &cli_addr, sizeof(cli_addr)) < 0) {
-                    throw std::runtime_error("Could not send RJT packet: " + std::string(strerror(errno)));
-                }
-
-                return;
-            } else {
-                // send ACC
-                PPCB::Packet accpacket{};
-                accpacket.type = PPCB::PacketType::ACC;
-                accpacket.session_id = connection.session_id;
-                accpacket.acc.packet_id = packet->data.packet_id;
-
-                if (sendto(sockfd, &accpacket, accpacket.size(), 0, (struct sockaddr *) &cli_addr, sizeof(cli_addr)) < 0) {
-                    throw std::runtime_error("Could not send ACC packet: " + std::string(strerror(errno)));
-                }
-            }
-
-            if (!PPCB::IS_DEBUG)
-                printf("%.*s", ntohl(packet->data.data_length), packet->data.data);
-
-            connection.conn.length -= ntohl(packet->data.data_length);
-            packet_id++;
-        }
-
-        {
-            PPCB::Packet packet{};
-            packet.type = PPCB::PacketType::RCVD;
-            packet.session_id = connection.session_id;
-
-            if (sendto(sockfd, &packet, packet.size(), 0, (struct sockaddr *) &conn_addr, sizeof(conn_addr)) < 0) {
-                throw std::runtime_error("Could not send RCVD packet: " + std::string(strerror(errno)));
-            }
-        }
-    }
-
-    int udpServer(uint16_t port, Cleaner &cleaner) {
-        char buffer[PPCB::MAX_PACKET_SIZE];
-
-        int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-        if (sockfd < 0) {
-            std::cerr << "ERROR: Could not open socket: " << strerror(errno) << "\n";
-            return 1;
-        }
-        cleaner.sockfd = sockfd;
-
-        set_sock_timeout(sockfd);
-
-        struct sockaddr_in serv_addr{}, cli_addr{};
-
-        serv_addr.sin_family = AF_INET;
-        serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        serv_addr.sin_port = htons(port);
-
-        if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-            std::cerr << "ERROR: Could not bind socket: " << strerror(errno) << "\n";
-            return 1;
-        }
-
-        ssize_t recv_len;
-        do {
+        try {
             memset(buffer, 0, sizeof(buffer)); // clear buffer
 
-            socklen_t len = sizeof(cli_addr);
-            recv_len = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr *) &cli_addr, &len);
+            auto conn = network::Connection{
+                    .type = ppcb::types::ConnType::UDP,
+                    .length = 0,
+                    .fd = sockfd,
+                    .session_id = 0xABAB, // dummy value so errors are easier to spot
+                    .peer_addr = reinterpret_cast<struct sockaddr *>(&cli_addr),
+                    .peer_addr_len = clilen,
+                    .is_server = true,
+            };
 
-            if (recv_len < 0) {
-                std::cerr << "ERROR: Could not receive data: " << strerror(errno) << "\n";
-                return 1;
-            }
-
-            auto *packet = reinterpret_cast<PPCB::Packet *>(buffer);
+            // read_packet_addr will also fill in the peer_addr and peer_addr_len fields
+            auto packet = network::read_packet_addr(conn, buffer, conn.peer_addr, &conn.peer_addr_len);
             try {
-                packet->validate(recv_len);
-            } catch (std::runtime_error &e) {
-                std::cerr << "ERROR: Invalid packet received: " << e.what() << "\n";
+                ppcb::packet::ntoh_packet(packet);
+                network::expect_packet(conn, ppcb::types::PacketType::CONN, packet);
+            } catch (const network::exceptions::UnexpectedPacketException &e) {
+                send_rjt(conn, buffer);
                 continue;
             }
-            if (packet->type != PPCB::PacketType::CONN) {
-                std::cerr << "ERROR: Expected CONN packet, got " << static_cast<int>(packet->type) << "\n";
-                continue;
-            }
-            try {
-                PPCB::Packet conn{};
-                memcpy(&conn, packet, sizeof(conn));
-                if (conn.conn.conn_type == PPCB::ConnType::UDP) {
-                    handleUdpConnection(sockfd, conn, buffer, cli_addr);
-                } else if (conn.conn.conn_type == PPCB::ConnType::UDPR) {
-                    handleUdprConnection(sockfd, conn, buffer, cli_addr);
-                } else {
-                    std::cerr << "ERROR: Invalid connection type: " << static_cast<int>(conn.conn.conn_type) << "\n";
-                    continue;
-                }
-            } catch (std::runtime_error &e) {
-                std::cerr << "ERROR: " << e.what() << "\n";
-                continue;
-            }
-        } while (recv_len > 0);
 
-        return 0;
-    }
+            auto conn_packet = reinterpret_cast<ppcb::types::ConnPacket *>(packet);
+            if (conn_packet->conn_type != ppcb::types::ConnType::UDPR && conn_packet->conn_type != ppcb::types::ConnType::UDP)
+                throw std::runtime_error("Invalid connection type");
+            conn.type = conn_packet->conn_type;
+            conn.session_id = packet->session_id;
+            conn.length = conn_packet->length;
+            ppcb::packet::print_packet(packet, '!');
+
+            ppcb::conf_sock(sockfd);  // set timeout
+
+            handleConnection(conn, buffer);
+        } catch (const std::exception &e) {
+            std::cerr << "ERROR: " << e.what() << std::endl;
+        }
+    } while (true);
 }

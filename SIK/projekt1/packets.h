@@ -27,6 +27,7 @@ namespace PPCB {
     };
     static_assert(sizeof(ConnType) == 1 || !IS_DEBUG, "ConnType must be 1 byte long");
 
+#pragma pack(push, 1)
     struct Packet {
         PacketType type;
         uint64_t session_id;
@@ -52,6 +53,7 @@ namespace PPCB {
         [[nodiscard]] ssize_t size() const;
         void print() const;
     };
+#pragma pack(pop)
 
     const ssize_t MAX_PACKET_SIZE = 64000;
 

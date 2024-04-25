@@ -6,8 +6,13 @@
 #define PROJEKT1_COMMON_H
 
 #include <cstdint>
+#include <cstdio>
+#include "protconst.h"
 
 uint16_t read_port(char const *string);
+ssize_t readn(int fd, void *buf, size_t count);
+ssize_t writen(int fd, const void *buf, size_t count);
+void set_sock_timeout(int fd);
 
 #if __BIG_ENDIAN__
 # define htonll(x) (x)

@@ -23,16 +23,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+
     try {
         uint16_t port = utils::read_port(argv[3]);
         std::string protocol = argv[1];
         std::string ip = argv[2];
 
-        //auto data = read_stdin();
-        auto data = std::vector<char>(1000);
-        for (int i = 0; i < data.size(); i++) {
-            data[i] = 'a' + (i % 26);
-        }
+        auto data = read_stdin();
 
         struct sockaddr_in addr = client::get_server_address(ip.c_str(), port);
 

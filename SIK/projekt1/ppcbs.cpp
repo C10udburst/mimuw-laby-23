@@ -7,6 +7,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    std::ios_base::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+
     try {
         uint16_t port = utils::read_port(argv[2]);
         std::string protocol = argv[1];

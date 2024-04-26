@@ -7,8 +7,8 @@
 #include <iostream>
 #include "client.h"
 
-constexpr ssize_t UDP_DATA_SIZE = 12;
-constexpr ssize_t TCP_DATA_SIZE = 12;
+constexpr ssize_t UDP_DATA_SIZE = ppcb::constants::max_packet_size / 2;
+constexpr ssize_t TCP_DATA_SIZE = ppcb::constants::max_packet_size / 2;
 
 static_assert((UDP_DATA_SIZE + sizeof(ppcb::types::DataPacket) <= ppcb::constants::max_packet_size) || !ppcb::constants::debug,
               "UDP_DATA_SIZE too big");
@@ -18,6 +18,7 @@ static_assert((TCP_DATA_SIZE + sizeof(ppcb::types::DataPacket) <= ppcb::constant
 namespace client {
 
     int tcpClient(struct sockaddr_in addr, std::vector<char> &data) {
+        utils::open_pcap(false);
         utils::Cleaner cleaner;
         int sockfd = socket(AF_INET, SOCK_STREAM, 0);
         if (sockfd < 0) {
@@ -55,6 +56,7 @@ namespace client {
     }
 
     int udpClient(struct sockaddr_in addr, std::vector<char> &data, bool retransmit) {
+        utils::open_pcap(false);
         utils::Cleaner cleaner;
         int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) {
@@ -103,12 +105,10 @@ namespace client {
             };
             ppcb::packet::hton_packet(reinterpret_cast<ppcb::types::Header *>(&connPacket));
             network::writen(conn, &connPacket, sizeof(connPacket));
-            ppcb::packet::print_packet(reinterpret_cast<ppcb::types::Header *>(&connPacket), '>');
         }
 
         do { // receive CONNACC or CONRJT
             auto header = network::read_packet(conn, buf);
-            ppcb::packet::print_packet(header, '<');
             ppcb::packet::ntoh_packet(header);
             if (header->session_id != conn.session_id)
                 continue;
@@ -138,7 +138,6 @@ namespace client {
             } else {
                 network::writen(conn, dataPacket,
                                 ppcb::packet::sizeof_packetn(packet));
-                ppcb::packet::print_packet(packet, '>');
             }
 
             packet_id++;
@@ -146,7 +145,6 @@ namespace client {
 
         { // receive RCVD or RJT
             auto header = network::read_packet(conn, buf);
-            ppcb::packet::print_packet(header, '<');
             ppcb::packet::ntoh_packet(header);
 
             if (header->session_id != conn.session_id) {
@@ -168,7 +166,6 @@ namespace client {
         for (int i = 0; i < ppcb::constants::max_retransmits; i++) {
             try {
                 packet_len = writen(conn, dataPacket, ppcb::packet::sizeof_packetn(packet));
-                ppcb::packet::print_packet(packet, '>');
             } catch (const network::exceptions::TimeoutException &e) {
                 continue; // if timeout, resend
             }
@@ -176,7 +173,6 @@ namespace client {
                 throw std::runtime_error("Connection closed");
             try {
                 auto ack = read_packet(conn, buf);
-                ppcb::packet::print_packet(ack, '<');
                 if (ack->session_id != packet->session_id)
                     continue;
                 if (ack->type != ppcb::types::PacketType::RJT && ack->type != ppcb::types::PacketType::ACC)

@@ -15,7 +15,6 @@ void server::handleConnection(const network::Connection &conn, char *buf) {
         };
         ppcb::packet::hton_packet(&connacc);
         network::writen(conn, &connacc, sizeof(connacc));
-        ppcb::packet::print_packet(&connacc, '>');
     }
     if (conn.type != ppcb::types::ConnType::UDPR) {
         // no retransmission mode
@@ -25,15 +24,16 @@ void server::handleConnection(const network::Connection &conn, char *buf) {
             ppcb::types::Header* packet;
             try {
                 packet = network::read_packet(conn, buf);
-                ppcb::packet::print_packet(packet, '<');
                 ppcb::packet::ntoh_packet(packet);
                 if (packet->session_id != conn.session_id)
                     throw network::exceptions::WrongPeerException();
                 network::expect_packet(conn, ppcb::types::PacketType::DATA, packet);
             } catch (const network::exceptions::UnexpectedPacketException &e) {
+                //std::cerr << "ERROR: " << e.what() << std::endl;
                 send_rjt(conn, buf);
                 continue;
             } catch (const network::exceptions::WrongPeerException &e) {
+                //std::cerr << "ERROR: " << e.what() << std::endl;
                 send_rjt(conn, buf);
                 continue;
             }
@@ -56,7 +56,6 @@ void server::handleConnection(const network::Connection &conn, char *buf) {
             if (packet_id == 0) {
                 try {
                     auto packet = network::read_packet(conn, buf);
-                    ppcb::packet::print_packet(packet, '<');
                     ppcb::packet::ntoh_packet(packet);
                     if (packet->session_id != conn.session_id)
                         throw network::exceptions::WrongPeerException();
@@ -82,6 +81,9 @@ void server::handleConnection(const network::Connection &conn, char *buf) {
             packet_id++;
         }
 
+        // flush stdio
+        std::cout << std::flush;
+
         { // send the last acc
             auto acc = ppcb::types::AccRjtPacket{
                     .type = ppcb::types::PacketType::ACC,
@@ -91,7 +93,6 @@ void server::handleConnection(const network::Connection &conn, char *buf) {
             auto acc_packet = reinterpret_cast<ppcb::types::Header *>(&acc);
             ppcb::packet::hton_packet(acc_packet);
             network::writen(conn, acc_packet, sizeof(acc));
-            ppcb::packet::print_packet(acc_packet, '>');
         }
     }
 
@@ -102,7 +103,6 @@ void server::handleConnection(const network::Connection &conn, char *buf) {
         };
         ppcb::packet::hton_packet(&rcvd);
         network::writen(conn, &rcvd, sizeof(rcvd));
-        ppcb::packet::print_packet(&rcvd, '>');
     }
 
     if (ppcb::constants::debug)
@@ -118,7 +118,6 @@ void server::send_rjt(const network::Connection &conn, void* buf) {
         };
         ppcb::packet::hton_packet(&conrjt);
         network::writen(conn, &conrjt, sizeof(conrjt));
-        ppcb::packet::print_packet(&conrjt, '>');
     } else if (packet->type == ppcb::types::PacketType::DATA) {
         auto data_packet = reinterpret_cast<ppcb::types::DataPacket *>(packet);
         auto rjt = ppcb::types::AccRjtPacket{
@@ -129,7 +128,6 @@ void server::send_rjt(const network::Connection &conn, void* buf) {
         auto rjt_packet = reinterpret_cast<ppcb::types::Header *>(&rjt);
         ppcb::packet::hton_packet(rjt_packet);
         network::writen(conn, rjt_packet, sizeof(rjt));
-        ppcb::packet::print_packet(rjt_packet, '>');
     }
 }
 
@@ -146,7 +144,6 @@ ppcb::types::Header *server::udprReceive(const network::Connection &conn, void *
         ssize_t packet_len;
         try {
             packet_len = writen(conn, packet, ppcb::packet::sizeof_packetn(packet));
-            ppcb::packet::print_packet(packet, '>');
         } catch (const network::exceptions::TimeoutException &e) {
             continue; // if timeout, resend
         }
@@ -154,7 +151,6 @@ ppcb::types::Header *server::udprReceive(const network::Connection &conn, void *
             throw std::runtime_error("Connection closed");
         try {
             auto ack = read_packet(conn, buf);
-            ppcb::packet::print_packet(ack, '<');
             ppcb::packet::ntoh_packet(ack);
             if (ack->session_id != packet->session_id)
                 throw network::exceptions::WrongPeerException();
@@ -178,6 +174,7 @@ ppcb::types::Header *server::udprReceive(const network::Connection &conn, void *
 }
 
 int server::tcpServer(uint16_t port) {
+    utils::open_pcap(true);
     utils::Cleaner cleaner;
     char buffer[ppcb::constants::max_packet_size + 8];
 
@@ -211,6 +208,9 @@ int server::tcpServer(uint16_t port) {
         }
     }
 
+    if (ppcb::constants::debug)
+        std::cout << "TCP listening on port " << port << std::endl;
+
     socklen_t clilen = sizeof(cli_addr);
     int newsockfd;
     do {
@@ -235,7 +235,6 @@ int server::tcpServer(uint16_t port) {
             };
             auto packet = network::read_packet(conn, buffer);
             ppcb::packet::ntoh_packet(packet);
-            ppcb::packet::print_packet(packet, '!');
             network::expect_packet(conn, ppcb::types::PacketType::CONN, packet);
             // no need to send rjt, because only way this is wrong is if the client is wrong, so UB
             auto conn_packet = reinterpret_cast<ppcb::types::ConnPacket *>(packet);
@@ -253,6 +252,7 @@ int server::tcpServer(uint16_t port) {
 }
 
 int server::udpServer(uint16_t port) {
+    utils::open_pcap(true);
     utils::Cleaner cleaner;
     char buffer[ppcb::constants::max_packet_size + 8];
 
@@ -273,6 +273,9 @@ int server::udpServer(uint16_t port) {
         std::cerr << "ERROR: Could not bind socket: " << strerror(errno) << "\n";
         return 1;
     }
+
+    if (ppcb::constants::debug)
+        std::cout << "UDP listening on port " << port << std::endl;
 
     socklen_t clilen = sizeof(cli_addr);
     do {
@@ -297,6 +300,7 @@ int server::udpServer(uint16_t port) {
                 ppcb::packet::ntoh_packet(packet);
                 network::expect_packet(conn, ppcb::types::PacketType::CONN, packet);
             } catch (const network::exceptions::UnexpectedPacketException &e) {
+                //std::cerr << "ERROR: " << e.what() << std::endl;
                 send_rjt(conn, buffer);
                 continue;
             }
@@ -307,7 +311,6 @@ int server::udpServer(uint16_t port) {
             conn.type = conn_packet->conn_type;
             conn.session_id = packet->session_id;
             conn.length = conn_packet->length;
-            ppcb::packet::print_packet(packet, '!');
 
             ppcb::conf_sock(sockfd);  // set timeout
 

@@ -9,6 +9,14 @@
 #include <iostream>
 #include "common.h"
 
+#if PCAP
+
+#include <ctime>
+#include <fcntl.h>
+
+#endif
+
+
 namespace utils {
     uint64_t htonll(uint64_t host) {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -35,22 +43,39 @@ namespace utils {
         return static_cast<uint16_t>(p);
     }
 
+    void open_pcap(bool server) {
+#if PCAP
+        const auto filename = server ? "/tmp/server.ppcb" : "/tmp/client.ppcb";
+        int filefd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (filefd != 5) {
+            if (filefd < 0)
+                throw std::runtime_error("open error: " + std::string(strerror(errno)));
+            if (dup2(filefd, 5) != 5)
+                throw std::runtime_error("dup2 error: " + std::string(strerror(errno)));
+            if (close(filefd) < 0)
+                throw std::runtime_error("close error: " + std::string(strerror(errno)));
+        }
+#endif
+    }
+
 }  // namespace utils
 
 namespace ppcb {
 
     void conf_sock(int fd) {
-        struct timeval tv;
-        tv.tv_sec = ppcb::constants::max_wait;
-        tv.tv_usec = 0;
+        struct timeval tv{
+                .tv_sec = constants::max_wait,
+                .tv_usec = 0
+        };
         if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
             throw std::runtime_error("setsockopt error: " + std::string(strerror(errno)));
     }
 
     void reset_sock(int fd) {
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 0;
+        struct timeval tv{
+                .tv_sec = 0,
+                .tv_usec = 0
+        };
         if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
             throw std::runtime_error("setsockopt error: " + std::string(strerror(errno)));
     }
@@ -142,6 +167,37 @@ namespace ppcb {
 #endif
 
         void print_packet(__attribute_maybe_unused__ const types::Header *header, __attribute_maybe_unused__ char dir) {
+#if PCAP == 1
+            int filefd = 5;
+            time_t seconds = time(NULL);
+            write(filefd, &seconds, sizeof(seconds));
+            write(filefd, &dir, sizeof(dir));
+            long packet_size;
+            switch (header->type) {
+                case types::PacketType::CONN:
+                    packet_size = sizeof(types::ConnPacket);
+                    break;
+                case types::PacketType::DATA:
+                    packet_size = sizeof(types::DataPacket);
+                    break;
+                case types::PacketType::ACC:
+                case types::PacketType::RJT:
+                    packet_size = sizeof(types::AccRjtPacket);
+                    break;
+                default:
+                    packet_size = sizeof(types::Header);
+            }
+            auto offset = 0;
+            auto buf = reinterpret_cast<const char *>(header);
+            while (packet_size > 0) {
+                ssize_t written = write(filefd, buf + offset, packet_size);
+                if (written < 0)
+                    throw std::runtime_error("write error: " + std::string(strerror(errno)));
+                packet_size -= written;
+                offset += written;
+            }
+#endif
+
 #if PPCB_DEBUG > 0
             std::cout << dir << " ";
             std::cout << packet_type_to_string(header->type) << "{";
@@ -276,7 +332,8 @@ namespace network {
         return read_packet_addr(conn, buf, &addr, &addr_len);
     }
 
-    ppcb::types::Header *read_packet_addr(const Connection &conn, void *buf, struct sockaddr *addr, socklen_t *addr_len) {
+    ppcb::types::Header *
+    read_packet_addr(const Connection &conn, void *buf, struct sockaddr *addr, socklen_t *addr_len) {
         if (conn.type == ppcb::types::ConnType::TCP) {
             auto cbuf = reinterpret_cast<char *>(buf); // cast to char* for pointer arithmetic
             auto recv_len = tcp_readn(conn.fd, buf, sizeof(ppcb::types::Header));
@@ -287,6 +344,7 @@ namespace network {
                 recv_len += tcp_readn(conn.fd, cbuf + recv_len,
                                       sizeof(ppcb::types::DataPacket) - sizeof(ppcb::types::Header));
             recv_len += tcp_readn(conn.fd, cbuf + recv_len, ppcb::packet::sizeof_packetn(header) - recv_len);
+            ppcb::packet::print_packet(reinterpret_cast<ppcb::types::Header *>(buf), 'R');
             ppcb::packet::validate(header, recv_len);
             return header;
         } else if (conn.type == ppcb::types::ConnType::UDP || conn.type == ppcb::types::ConnType::UDPR) {
@@ -297,8 +355,9 @@ namespace network {
             else if (recv_len < 0)
                 throw std::runtime_error("recvfrom error: " + std::string(strerror(errno)));
             //if (*addr_len != conn.peer_addr_len || memcmp(addr, conn.peer_addr, *addr_len) != 0)
-            //    throw exceptions::WrongPeerException("Wrong peer");
+            //    throw exceptions::WrongPeerException();
             auto header = reinterpret_cast<ppcb::types::Header *>(buf);
+            ppcb::packet::print_packet(reinterpret_cast<ppcb::types::Header *>(buf), 'R');
             ppcb::packet::validate(header, recv_len);
             return header;
         } else
@@ -306,6 +365,7 @@ namespace network {
     }
 
     ssize_t writen(const Connection &conn, const void *vptr, ssize_t n) {
+        ppcb::packet::print_packet(reinterpret_cast<const ppcb::types::Header *>(vptr), 'W');
         if (conn.type == ppcb::types::ConnType::TCP) {
             auto sent_len = tcp_writen(conn.fd, vptr, n);
             return sent_len;
@@ -321,7 +381,8 @@ namespace network {
     }
 
     void
-    expect_packet(__attribute_maybe_unused__ const Connection &conn, ppcb::types::PacketType expected_type, const ppcb::types::Header *header) {
+    expect_packet(__attribute_maybe_unused__ const Connection &conn, ppcb::types::PacketType expected_type,
+                  const ppcb::types::Header *header) {
         if (header->type != expected_type) {
             auto expected_int = static_cast<uint8_t>(expected_type);
             auto got_int = static_cast<uint8_t>(header->type);

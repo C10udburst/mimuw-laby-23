@@ -1,0 +1,71 @@
+services:
+  server:
+    build: .
+    volumes:
+      - .:/work
+    networks:
+      ppcbnet:
+          aliases:
+            - server
+            - server.ppcbnet
+    hostname: server
+    cap_add:
+      - NET_ADMIN
+    extra_hosts:
+        - "host.docker.internal:host-gateway"
+  client1:
+    build: .
+    volumes:
+      - .:/work
+    networks:
+      ppcbnet:
+        aliases:
+          - client1
+          - client1.ppcbnet
+    hostname: client1
+    cap_add:
+      - NET_ADMIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  client2:
+    build: .
+    volumes:
+      - .:/work
+    networks:
+      ppcbnet:
+        aliases:
+          - client2
+          - client2.ppcbnet
+    hostname: client2
+    cap_add:
+      - NET_ADMIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  client3:
+    build: .
+    volumes:
+      - .:/work
+    networks:
+      ppcbnet:
+        aliases:
+          - client3
+          - client3.ppcbnet
+    hostname: client3
+    cap_add:
+      - NET_ADMIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+networks:
+  ppcbnet:
+    internal: true
+    driver: bridge
+    driver_opts:
+        com.docker.network.name: 'ppcbnet'
+        com.docker.network.enable_ipv6: 'false'
+        com.docker.network.enable_ipv4: 'true'
+        com.docker.network.enable_ipam: 'true'
+        com.docker.network.enable_default_gateway: 'true'
+    ipam:
+      config:
+        - subnet: 172.25.3.24/29
+          gateway: 172.25.3.25

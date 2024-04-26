@@ -14,6 +14,8 @@
 # define PPCB_DEBUG 1
 #endif
 
+#define PCAP 1 // 1 to enable pcap
+
 namespace ppcb {
     namespace constants {
         constexpr int max_wait = MAX_WAIT;
@@ -151,8 +153,9 @@ namespace utils {
                 close(fd);
             }
         }
-
     };
+
+    void open_pcap(bool server);
 }
 
 namespace network {

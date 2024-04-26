@@ -235,7 +235,6 @@ int main(int argc, char *argv[]) {
         try {
             auto *header = network::read_packet_addr(conn, buffer, conn.peer_addr, &conn.peer_addr_len);
             update_conn(&conn, header);
-            ppcb::packet::print_packet(header, '!');
         } catch (const std::exception &e) {
             std::cout << "ERROR: " << e.what() << std::endl;
             return 1;
@@ -247,11 +246,9 @@ int main(int argc, char *argv[]) {
             update_conn(&conn, packet);
             ppcb::packet::hton_packet(packet);
             network::writen(conn, packet, ppcb::packet::sizeof_packetn(packet));
-            ppcb::packet::print_packet(packet, '>');
 
             auto *header = network::read_packet(conn, buffer);
             update_conn(&conn, header);
-            ppcb::packet::print_packet(header, '<');
         } catch (const std::exception &e) {
             std::cout << "ERROR: " << e.what() << std::endl;
         }

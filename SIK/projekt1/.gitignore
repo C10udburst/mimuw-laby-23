@@ -2,6 +2,8 @@
 ppcbs
 ppcbc
 ppcat
+*.bin
+*.tgz
 
 # Prerequisites
 *.d

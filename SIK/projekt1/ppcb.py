@@ -14,7 +14,7 @@ class PacketType(enum.IntEnum):
     RJT = 6
     RCVD = 7
 
-    def __str__(self):
+    def __repr__(self):
         return self.name
 
 
@@ -23,7 +23,7 @@ class ConnType(enum.IntEnum):
     UDP = 2
     UDPR = 3
 
-    def __str__(self):
+    def __repr__(self):
         return self.name
 
 
@@ -52,8 +52,11 @@ class Packet:
             return acc_rjt_packet
         return packet
 
-    def __str__(self):
+    def __repr__(self):
         return f"Packet(packet_type={self.packet_type}, session_id={self.session_id})"
+
+    def to_dict(self):
+        return {"packet_type": self.packet_type, "session_id": self.session_id}
 
 
 class ConnPacket(Packet):
@@ -72,9 +75,14 @@ class ConnPacket(Packet):
         length = struct.unpack("!Q", file.read(8))[0]
         return ConnPacket(packet.packet_type, packet.session_id, conn_type, length)
 
-    def __str__(self):
+    def __repr__(self):
         return (f"ConnPacket(packet_type={self.packet_type}, session_id={self.session_id}, conn_type={self.conn_type}, "
                 f"length={self.length})")
+        
+    def to_dict(self):
+        d = super().to_dict()
+        d.update({"conn_type": self.conn_type, "length": self.length})
+        return d
 
 
 class DataPacket(Packet):
@@ -89,9 +97,14 @@ class DataPacket(Packet):
         data_length = struct.unpack("!L", file.read(4))[0]
         return DataPacket(packet.packet_type, packet.session_id, packet_id, data_length)
 
-    def __str__(self):
+    def __repr__(self):
         return (f"DataPacket(packet_type={self.packet_type}, session_id={self.session_id}, packet_id={self.packet_id}, "
                 f"data_length={self.data_length})")
+        
+    def to_dict(self):
+        d = super().to_dict()
+        d.update({"packet_id": self.packet_id, "data_length": self.data_length})
+        return d
 
 
 class AccRjtPacket(Packet):
@@ -104,8 +117,13 @@ class AccRjtPacket(Packet):
         packet_id = struct.unpack("!Q", file.read(8))[0]
         return AccRjtPacket(packet.packet_type, packet.session_id, packet_id)
 
-    def __str__(self):
+    def __repr__(self):
         return f"AccRjtPacket(packet_type={self.packet_type}, session_id={self.session_id}, packet_id={self.packet_id})"
+    
+    def to_dict(self):
+        d = super().to_dict()
+        d.update({"packet_id": self.packet_id})
+        return d
 
 
 class Entry:
@@ -114,7 +132,7 @@ class Entry:
         self.dir = _dir
         self.packet = packet
 
-    def __str__(self):
+    def __repr__(self):
         return f"Entry(time={self.time}, dir={self.dir}, packet={self.packet})"
 
     @staticmethod
@@ -125,6 +143,11 @@ class Entry:
         _dir = chr(_dir)
         packet = Packet.read(file)
         return Entry(time, _dir, packet)
+    
+    def to_dict(self):
+        d = {"time": self.time, "dir": self.dir}
+        d.update(self.packet.to_dict())
+        return d
 
 
 def read(file_path: str):

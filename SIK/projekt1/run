@@ -1,2 +1,8 @@
 #!/bin/bash
-docker exec -it "projekt1-$1-1" "${@:2}"
+
+# check if tty is available
+if [ ! -t 1 ]; then
+    docker exec "projekt1-$1-1" "${@:2}"
+else
+    docker exec -it "projekt1-$1-1" "${@:2}"
+fi

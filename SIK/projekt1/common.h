@@ -11,7 +11,7 @@
 #include "exceptions.h"
 
 #ifndef PPCB_DEBUG
-# define PPCB_DEBUG 1
+# define PPCB_DEBUG 0
 #endif
 
 #define PCAP 1 // 1 to enable pcap
@@ -155,7 +155,7 @@ namespace utils {
         }
     };
 
-    void open_pcap(bool server);
+    void open_pcap(__attribute_maybe_unused__ bool server);
 }
 
 namespace network {

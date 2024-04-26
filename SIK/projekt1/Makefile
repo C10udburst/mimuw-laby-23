@@ -1,13 +1,13 @@
 CC = g++
-CFLAGS = -Wall -Wextra -std=c++23 -g -O0
+DATA_SIZE = 0
+CFLAGS = -Wall -Wextra -std=c++23 -g -O0 -D DATA_SIZE=$(DATA_SIZE)
 
 all: ppcbs ppcbc ppcat
 
 clean:
 	docker compose down || true
 	docker compose rm -f || true
-	rm -f *.o ppcbs ppcbc ppcat
-	rm ppcb.tgz
+	rm -f *.o ppcbs ppcbc ppcat ppcb.tgz
 
 ppcb.tgz: Makefile.release common.cpp common.h server.cpp server.h client.cpp client.h ppcbs.cpp ppcbc.cpp ppcat.cpp protconst.h exceptions.h
 	tar --transform 'flags=r;s|Makefile.release|Makefile|' -czf $@ $^

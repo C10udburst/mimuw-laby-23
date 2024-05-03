@@ -43,7 +43,7 @@ namespace utils {
         return static_cast<uint16_t>(p);
     }
 
-    void open_pcap(bool server) {
+    void open_pcap(__attribute_maybe_unused__ bool server) {
 #if PCAP
         const auto filename = server ? "/tmp/server.ppcb" : "/tmp/client.ppcb";
         int filefd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666);

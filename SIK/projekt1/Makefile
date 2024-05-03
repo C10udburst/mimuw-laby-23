@@ -9,7 +9,7 @@ clean:
 	docker compose rm -f || true
 	rm -f *.o ppcbs ppcbc ppcat ppcb.tgz
 
-ppcb.tgz: Makefile.release common.cpp common.h server.cpp server.h client.cpp client.h ppcbs.cpp ppcbc.cpp ppcat.cpp protconst.h exceptions.h
+ppcb.tgz: Makefile.release common.cpp common.h server.cpp server.h client.cpp client.h ppcbs.cpp ppcbc.cpp ppcat.cpp protconst.h exceptions.h raport.pdf
 	tar --transform 'flags=r;s|Makefile.release|Makefile|' -czf $@ $^
 
 common.o: common.cpp common.h protconst.h exceptions.h

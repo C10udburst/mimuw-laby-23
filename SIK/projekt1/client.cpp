@@ -7,17 +7,8 @@
 #include <iostream>
 #include "client.h"
 
-#ifndef DATA_SIZE
-#define DATA_SIZE 0
-#endif
-
-#if DATA_SIZE == 0
-    constexpr ssize_t UDP_DATA_SIZE = ppcb::constants::max_packet_size / 2;
-    constexpr ssize_t TCP_DATA_SIZE = ppcb::constants::max_packet_size / 2;
-#else
-    constexpr ssize_t UDP_DATA_SIZE = DATA_SIZE;
-    constexpr ssize_t TCP_DATA_SIZE = DATA_SIZE;
-#endif
+constexpr ssize_t UDP_DATA_SIZE = 512;
+constexpr ssize_t TCP_DATA_SIZE = 512;
 
 static_assert((UDP_DATA_SIZE + sizeof(ppcb::types::DataPacket) <= ppcb::constants::max_packet_size) || !ppcb::constants::debug,
               "UDP_DATA_SIZE too big");

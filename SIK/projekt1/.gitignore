@@ -4,6 +4,7 @@ ppcbc
 ppcat
 *.bin
 *.tgz
+*.pdf
 
 # Prerequisites
 *.d

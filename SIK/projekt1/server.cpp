@@ -212,7 +212,7 @@ int server::tcpServer(uint16_t port) {
         std::cout << "TCP listening on port " << port << std::endl;
 
     socklen_t clilen = sizeof(cli_addr);
-    int newsockfd;
+    int newsockfd = -1;
     do {
         try {
             memset(buffer, 0, sizeof(buffer)); // clear buffer

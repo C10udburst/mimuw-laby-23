@@ -14,7 +14,7 @@
 # define PPCB_DEBUG 0
 #endif
 
-#define PCAP 1 // 1 to enable pcap
+#define PCAP 0 // 1 to enable pcap
 
 namespace ppcb {
     namespace constants {

@@ -122,15 +122,15 @@ namespace client {
         auto chunk_size = conn.type == ppcb::types::ConnType::TCP ? TCP_DATA_SIZE : UDP_DATA_SIZE;
         uint64_t packet_id = 0;
         char writebuf[ppcb::constants::max_packet_size + 8];
-        for (auto const chunk: data | std::views::chunk(chunk_size)) {
+        for (auto it = data.begin(); it < data.end(); it += chunk_size) {
             auto dataPacket = reinterpret_cast<ppcb::types::DataPacket *>(writebuf);
             auto packet = reinterpret_cast<ppcb::types::Header *>(dataPacket);
             dataPacket->type = ppcb::types::PacketType::DATA;
             dataPacket->session_id = conn.session_id;
             dataPacket->packet_id = packet_id;
-            dataPacket->data_length = chunk.size();
+            dataPacket->data_length = std::min(chunk_size, static_cast<ssize_t>(data.end() - it));
 
-            std::copy(chunk.begin(), chunk.end(), writebuf + sizeof(ppcb::types::DataPacket));
+            std::copy(it, it + dataPacket->data_length, writebuf + sizeof(ppcb::types::DataPacket));
             ppcb::packet::hton_packet(packet);
 
             if (conn.type == ppcb::types::ConnType::UDPR) {
@@ -163,7 +163,7 @@ namespace client {
         ssize_t packet_len;
         uint64_t packet_id = dataPacket->packet_id;
         auto packet = reinterpret_cast<const ppcb::types::Header *>(dataPacket);
-        for (int i = 0; i < ppcb::constants::max_retransmits; i++) {
+        for (int i = 0; i < ppcb::constants::max_retransmits; ) {
             try {
                 packet_len = writen(conn, dataPacket, ppcb::packet::sizeof_packetn(packet));
             } catch (const network::exceptions::TimeoutException &e) {
@@ -186,6 +186,7 @@ namespace client {
                     throw std::runtime_error("Connection rejected");
                 return; // success, ack->type == ACC && ack->packet_id == packet_id
             } catch (const network::exceptions::TimeoutException &e) {
+                i++;
                 continue; // if timeout, resend
             }
         }

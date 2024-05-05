@@ -45,7 +45,7 @@ void server::handleConnection(const network::Connection &conn, char *buf) {
             bytes_left -= data_packet->data_length;
             if (!ppcb::constants::debug) {
                 auto cbuf = reinterpret_cast<char *>(buf);
-                printf("%.*s", data_packet->data_length, cbuf + sizeof(ppcb::types::DataPacket));
+                write(STDOUT_FILENO, cbuf + sizeof(ppcb::types::DataPacket), data_packet->data_length);
             }
         }
     } else {
@@ -76,7 +76,7 @@ void server::handleConnection(const network::Connection &conn, char *buf) {
             bytes_left -= data_packet->data_length;
             if (!ppcb::constants::debug) {
                 auto cbuf = reinterpret_cast<char *>(buf);
-                printf("%.*s", data_packet->data_length, cbuf + sizeof(ppcb::types::DataPacket));
+                write(STDOUT_FILENO, cbuf + sizeof(ppcb::types::DataPacket), data_packet->data_length);
             }
             packet_id++;
         }
@@ -111,7 +111,7 @@ void server::handleConnection(const network::Connection &conn, char *buf) {
 
 void server::send_rjt(const network::Connection &conn, void* buf) {
     auto packet = reinterpret_cast<ppcb::types::Header *>(buf);
-    if (packet->type == ppcb::types::PacketType::CONN) {
+    if (packet->type == ppcb::types::PacketType::CONN && conn.session_id != packet->session_id) {
         auto conrjt = ppcb::types::Header{
                 .type = ppcb::types::PacketType::CONRJT,
                 .session_id = packet->session_id,
@@ -169,6 +169,7 @@ ppcb::types::Header *server::udprReceive(const network::Connection &conn, void *
         // we know buf has valid packet because otherwise we would have thrown an exception,
         // but we also know that the packet is not the expected one, so we can send RJT
         send_rjt(conn, buf);
+        i--;
     }
     throw std::runtime_error("Too many retransmits");
 }
@@ -176,7 +177,7 @@ ppcb::types::Header *server::udprReceive(const network::Connection &conn, void *
 int server::tcpServer(uint16_t port) {
     utils::open_pcap(true);
     utils::Cleaner cleaner;
-    char buffer[ppcb::constants::max_packet_size + 8];
+    char buffer[ppcb::constants::max_packet_size + sizeof(ppcb::types::DataPacket) + 1];
 
     // Ignore SIGPIPE signals, so they are delivered as normal errors.
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
@@ -254,7 +255,7 @@ int server::tcpServer(uint16_t port) {
 int server::udpServer(uint16_t port) {
     utils::open_pcap(true);
     utils::Cleaner cleaner;
-    char buffer[ppcb::constants::max_packet_size + 8];
+    char buffer[ppcb::constants::max_packet_size + sizeof(ppcb::types::DataPacket) + 1];
 
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {

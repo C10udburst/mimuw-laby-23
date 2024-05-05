@@ -37,7 +37,7 @@ namespace utils {
     uint16_t read_port(const char *port) {
         char *endptr;
         unsigned long p = strtoul(port, &endptr, 10);
-        if (*endptr != '\0' || p == 0 || ((p == ULONG_MAX) && (errno == ERANGE))) {
+        if (*endptr != '\0' || p == 0 || p > USHRT_MAX) {
             throw std::invalid_argument("Invalid port number");
         }
         return static_cast<uint16_t>(p);
@@ -325,11 +325,11 @@ ssize_t tcp_writen(int fd, const void *vptr, ssize_t n) {
 }
 
 namespace network {
+    struct sockaddr prev_addr{};
 
     ppcb::types::Header *read_packet(const Connection &conn, void *buf) {
-        struct sockaddr addr{};
-        socklen_t addr_len = sizeof(addr);
-        return read_packet_addr(conn, buf, &addr, &addr_len);
+        socklen_t addr_len = sizeof(prev_addr);
+        return read_packet_addr(conn, buf, &prev_addr, &addr_len);
     }
 
     ppcb::types::Header *
@@ -370,7 +370,7 @@ namespace network {
             auto sent_len = tcp_writen(conn.fd, vptr, n);
             return sent_len;
         } else if (conn.type == ppcb::types::ConnType::UDP || conn.type == ppcb::types::ConnType::UDPR) {
-            auto sent_len = sendto(conn.fd, vptr, n, 0, conn.peer_addr, conn.peer_addr_len);
+            auto sent_len = sendto(conn.fd, vptr, n, 0, (prev_addr.sa_family != 0) ? &prev_addr : conn.peer_addr, conn.peer_addr_len);
             if (sent_len < 0 && errno == EAGAIN)
                 throw exceptions::TimeoutException();
             else if (sent_len < 0)

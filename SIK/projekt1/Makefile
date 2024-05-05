@@ -1,6 +1,5 @@
 CC = g++
-DATA_SIZE = 0
-CFLAGS = -Wall -Wextra -std=c++23 -g -O0 -D DATA_SIZE=$(DATA_SIZE)
+CFLAGS = -Wall -Wextra -std=c++23 -g -O0
 
 all: ppcbs ppcbc ppcat
 

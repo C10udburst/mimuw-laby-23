@@ -58,6 +58,30 @@ namespace input {
     ppcb::types::Header *read_packet(std::istream &is) {
         std::string stype;
         is >> stype;
+        if (stype[0] == '?') {
+            // help
+            try {
+                auto stype1 = stype.substr(1);
+                auto type = pt_from_string(stype1);
+                switch (type) {
+                    case ppcb::types::PacketType::CONN:
+                        std::cout << "CONN <session_id> <conn_type> <length>" << std::endl;
+                        break;
+                    case ppcb::types::PacketType::ACC:
+                    case ppcb::types::PacketType::RJT:
+                        std::cout << "<ACC/RJT> <session_id> <packet_id>" << std::endl;
+                        break;
+                    case ppcb::types::PacketType::DATA:
+                        std::cout << "DATA <session_id> <packet_id> <data_length> <data>" << std::endl;
+                        break;
+                    default:
+                        std::cout << stype1 << " <session_id>" << std::endl;
+                }
+            } catch (const std::invalid_argument &e) {
+                std::cout << "Packet types: CONN, CONNACC, CONRJT, DATA, ACC, RJT, RCVD" << std::endl;
+            }
+            return nullptr;
+        }
         auto type = pt_from_string(stype);
         if (type == ppcb::types::PacketType::CONN) {
             auto *conn = new ppcb::types::ConnPacket;
@@ -243,6 +267,8 @@ int main(int argc, char *argv[]) {
     do { // write
         try {
             auto packet = input::read_packet(std::cin);
+            if (packet == nullptr)
+                continue;
             update_conn(&conn, packet);
             ppcb::packet::hton_packet(packet);
             network::writen(conn, packet, ppcb::packet::sizeof_packetn(packet));

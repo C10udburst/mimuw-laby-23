@@ -1,0 +1,19 @@
+{% extends 'app/base_generic.html' %}
+
+
+{% block content %}
+
+<h1>Login</h1>
+
+{% if form.errors %}
+<p>Your username and password didn't match. Please try again.</p>
+{% endif %}
+
+<form method="post" class="flex flex-row flex-wrap gap-2">
+{% csrf_token %}
+<input class="input input-bordered w-full max-w-xs" type="text" id="username" name="username" placeholder="Username" required>
+<input class="input input-bordered w-full max-w-xs" type="password" id="password" name="password" placeholder="Password" required>
+<button class="btn btn-primary" type="submit">Login</button>
+</form>
+
+{% endblock %}

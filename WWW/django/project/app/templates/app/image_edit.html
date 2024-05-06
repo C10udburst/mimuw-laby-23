@@ -1,0 +1,66 @@
+{% extends 'app/base_generic.html' %}
+
+{% block content %}
+  <h1>Edit Image</h1>
+  {% if user in image.editors.all %}
+  <form method="POST">
+    {% csrf_token %}
+    <input type="hidden" name="image_id" value="{{ image.id }}">
+    <h2>Rectangles:</h2>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Preview</th>
+          <th>Width</th>
+          <th>Height</th>
+          <th>X</th>
+          <th>Y</th>
+          <th>Fill</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rectangle in image.rectangles.all %}
+          <tr>
+            <td>
+              <svg viewBox="0 0 {{ rectangle.width }} {{ rectangle.height }}" width="1.2em" height="1.2em">
+                <rect width="{{ rectangle.width }}" height="{{ rectangle.height }}" fill="{{ rectangle.color }}" />
+              </svg>
+            </td>
+            <td>{{ rectangle.width }}</td>
+            <td>{{ rectangle.height }}</td>
+            <td>{{ rectangle.x }}</td>
+            <td>{{ rectangle.y }}</td>
+            <td>{{ rectangle.color }}</td>
+            <td>
+              <button class="btn btn-error" type="submit" name="delete_rectangle" value="{{ rectangle.id }}">Delete</button>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </form>
+  <form method="POST" class="flex flex-col gap-2">
+    {% csrf_token %}
+    <h2>Add Rectangle:</h2>
+    <label class="input input-bordered flex items-center gap-2" for="width">Width
+      <input class="grow" type="number" id="width" name="width" required>
+    </label>
+    <label class="input input-bordered flex items-center gap-2" for="height">Height
+      <input class="grow" type="number" id="height" name="height" required>
+    </label>
+    <label class="input input-bordered flex items-center gap-2" for="x">X
+      <input class="grow" type="number" id="x" name="x" required>
+    </label>
+    <label class="input input-bordered flex items-center gap-2" for="y">Y
+      <input class="grow" type="number" id="y" name="y" required>
+    </label>
+    <label class="input input-bordered flex items-center gap-2" for="color">Color
+      <input class="grow" type="color" id="color" name="color" required>
+    </label>
+    <button class="btn btn-primary" type="submit" name="add_rectangle">Add Rectangle</button>
+  </form>
+  {% else %}
+    <p>You are not allowed to edit this image.</p>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html data-theme="lemonade">
+<head>
+    <title>{% block title %}{% endblock %}</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.10.5/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <nav class="navbar bg-base-100 flex justify-between">
+        <a class="btn btn-ghost text-xl" href="{% url 'index' %}"><h3>Obrazki</h3></a>
+        <!-- if logged in show  edit dash link-->
+        {% if user.is_authenticated %}
+            <p>Logged in as {{ user.username }}</p>
+            <a class="btn btn-outline btn-primary" href="{% url 'logout' %}">Logout</a>
+        {% else %}
+            <a class="btn btn-outline btn-primary" href="{% url 'login' %}">Login</a>
+        {% endif %}
+    </nav>
+    <main class="container mx-auto">
+        {% block content %}
+        {% endblock %}
+    </main>
+</body>
+</html>

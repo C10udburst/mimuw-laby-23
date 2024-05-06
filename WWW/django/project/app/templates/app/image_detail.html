@@ -1,0 +1,39 @@
+{% extends 'app/base_generic.html' %}
+
+{% block content %}
+
+<div class="card w-full bg-base-200 shadow-lg m-4">
+    <figure>{{ image.as_svg|safe }}</figure>
+    <div class="card-body">
+        <h2 class="card-title">{{ image.name }}</h2>
+        <p>Dimensions: {{ image.width }}x{{ image.height }}</p>
+        <p>{{ image.description|safe|linebreaks }}</p>
+        <p>Publish date: {{ image.pub_date }}</p>
+        <p class="flex gap-2 align-center">
+            <span>Tags:</span>
+            {% for tag in image.tags.all %}
+                <a href="{% url 'index' %}?tag={{ tag.id }}" class="badge badge-secondary">{{ tag.name }}</a>
+            {% endfor %}
+        </p>
+        <p class="flex gap-2 align-center">
+            <span>Editors:</span>
+            <div class="avatar-group -space-x-6 rtl:space-x-reverse">
+            {% for editor in image.editors.all %}
+                <div class="tooltip tooltip-open" data-tip="{{ editor.username }}">
+                    <div class="avatar placeholder" onclick="alert('{{ editor.username }}')">
+                        <div class="bg-neutral text-neutral-content rounded-full w-12">
+                            <span>{{ editor.username|slice:":2" }}</span>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+            </div>
+        </p>
+        {% if user.is_authenticated %}
+            <a href="{% url 'image_edit' image.id %}" class="btn btn-primary">Edit</a>
+        {% endif %}
+    </div>
+</div>
+            
+
+{% endblock %}

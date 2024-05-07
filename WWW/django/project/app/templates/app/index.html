@@ -28,7 +28,7 @@
         <figure><img src="{% url 'image_render' image.id %}" alt="{{ image.name }}" class="max-h-96"></figure>
         <div class="card-body">
             <h2 class="card-title">{{ image.name }}</h2>
-            <p>{{ image.description|safe|linebreaks }}</p>
+            <p class="overflow-hidden">{{ image.description|safe }}</p>
             <div class="card-actions">
                 {% for tag in image.tags.all %}
                     <a href="{% url 'index' %}?tag={{ tag.id }}" class="badge badge-secondary">{{ tag.name }}</a>

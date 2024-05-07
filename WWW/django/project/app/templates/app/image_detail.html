@@ -7,7 +7,7 @@
     <div class="card-body">
         <h2 class="card-title">{{ image.name }}</h2>
         <p>Dimensions: {{ image.width }}x{{ image.height }}</p>
-        <p>{{ image.description|safe|linebreaks }}</p>
+        <p class="overflow-hidden">{{ image.description|safe }}</p>
         <p>Publish date: {{ image.pub_date }}</p>
         <p class="flex gap-2 align-center">
             <span>Tags:</span>

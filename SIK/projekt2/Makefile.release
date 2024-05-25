@@ -1,0 +1,17 @@
+CC = g++
+CFLAGS = -Wall -Wextra -std=c++20 -O2
+
+all: kierki-serwer kierki-klient
+
+clean:
+	rm -f *.o kierki-serwer kierki-klient
+
+common.o: common.cpp common.h
+
+kierki-serwer.o: kierki-serwer.cpp common.h
+
+kierki-klient.o: kierki-klient.cpp common.h
+
+kierki-serwer: kierki-serwer.o common.o
+
+kiereki-klient: kierki-klient.o common.o

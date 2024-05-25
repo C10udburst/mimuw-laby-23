@@ -1,8 +1,8 @@
-export function toRelative(event: MouseEvent, cb: (x: number, y: number) => void) {
+export function toRelative<Type>(event: MouseEvent, cb: (x: number, y: number) => Type): Type|null {
     const preview = document.getElementById('preview')
-    if (!preview) return;
+    if (!preview) return null;
     const rect = preview.getBoundingClientRect()
-    cb(
+    return cb(
         event.clientX - rect.x,
         event.clientY - rect.y
     )

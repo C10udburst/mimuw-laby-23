@@ -48,20 +48,22 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    auto server = server::Server{
-        .clients = {},
-        .gamefile = server::Gamefile(filepath),
-        .sync = server::Sync()
-    };
-    for (auto i = 0; i < 4; i++)
-        server.clients[i].seat = i;
-
     // start tcp server
     auto server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket == -1) {
         std::cerr << "Cannot create socket" << std::endl;
         return 1;
     }
+
+    auto server = server::Server{
+        .clients = {},
+        .gamefile = server::Gamefile(filepath),
+        .taken = std::vector<std::string>(),
+        .sync = server::Sync()
+    };
+    server.taken.reserve(13);
+    for (auto i = 0; i < 4; i++)
+        server.clients[i].seat = i;
 
     auto server_address = sockaddr_in{
         .sin_family = AF_INET,
@@ -75,6 +77,13 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    socklen_t len = sizeof server_address;
+
+    if (getsockname(server_socket, (sockaddr *) &server_address, &len) == -1) {
+        std::cerr << "Failed to get hostname" << std::endl;
+        return 1;
+    }
+
     if (listen(server_socket, 4) == -1) {
         std::cerr << "Cannot listen on socket" << std::endl;
         return 1;
@@ -84,6 +93,7 @@ int main(int argc, char *argv[]) {
     while (server.sync.game_running) {
         sockaddr_in client_address{};
         socklen_t client_address_size = sizeof(client_address);
+        // TODO: allow to interrupt when game is finished
         int client_socket = accept(server_socket, (sockaddr *) &client_address, &client_address_size);
         if (client_socket == -1) {
             std::cerr << "Error accepting connection" << std::endl;

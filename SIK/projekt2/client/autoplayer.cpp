@@ -7,7 +7,7 @@ kierki::Card client::AutoPlayer::play(std::array<kierki::Card, 4> table) {
         // regardless of suit
         auto min = hand[0];
         for (auto card : hand) {
-            if (!card.isnull() && card.rank < min.rank)
+            if (min.isnull() || (!card.isnull() && card.rank < min.rank))
                 min = card;
         }
         return min;

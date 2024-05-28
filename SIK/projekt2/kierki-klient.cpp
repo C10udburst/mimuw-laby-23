@@ -134,7 +134,7 @@ int main(int argc, char *argv[]) {
 
     pollfd pfd[2];
     pfd[0].fd = conn.fd;
-    pfd[0].events = POLLIN;
+    pfd[0].events = POLLIN | POLLHUP;
     pfd[1].fd = STDIN_FILENO;
     pfd[1].events = automatic ? 0 : POLLIN;
 
@@ -163,6 +163,11 @@ int main(int argc, char *argv[]) {
                     int draw;
                     ss2 >> draw;
                     std::cout << "Wrong message received in trick " << draw << "." << std::endl;
+                }
+                if (line.starts_with("DE")) {
+                    player->taken.clear();
+                    player->taken.reserve(13);
+                    break;
                 }
                 if (line.starts_with("TR")) {
                     client::Trick trick;
@@ -196,12 +201,21 @@ int main(int argc, char *argv[]) {
                         std::cout << "." << std::endl;
                     }
                     if (taken.loser == seat) {
-                        // TODO: ostatnia gra, a nie wszystkie gry
                         player->taken.push_back(taken.table);
                     }
+                }
+                if (line.starts_with("SC")) {
+
+                }
+                if (line.starts_with("TO")) {
 
                 }
                 continue;
+            }
+
+            if (pfd[0].revents & POLLHUP) {
+                delete player;
+                return 0;
             }
 
             if (pfd[1].revents & POLLIN) {

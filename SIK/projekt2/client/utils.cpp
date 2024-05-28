@@ -3,6 +3,7 @@
 
 namespace client {
     std::string get_trick1(const std::string &line, const std::string &packet_type) {
+        // TODO: this parser is slightly fucked
         std::regex re("("+packet_type+"1[012]?)(?:(?:[23456789JQKA]|10)[CSDH]){0,3}");
         std::smatch match;
         if (std::regex_search(line, match, re)) {

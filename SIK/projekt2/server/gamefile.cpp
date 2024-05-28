@@ -2,6 +2,7 @@
 #include "const.h"
 #include <sstream>
 #include <iostream>
+#include <cstring>
 
 std::istream &operator>>(std::istream &is, server::Game &game) {
     is >> game.rule;
@@ -21,6 +22,7 @@ std::istream &operator>>(std::istream &is, server::Game &game) {
             is >> card;
         is.ignore(1); // ignore \n
     }
+    memcpy(game.cards_initial, game.cards, sizeof(game.cards));
     return is;
 }
 
@@ -119,8 +121,6 @@ int server::Game::calculate_score(int deal) {
 }
 
 int server::Game::get_loser() {
-    // TODO: zawsze zwraca first_seat??
-
     auto max = 0;
     for (int8_t i = 0; i < 4; i++) {
         if (table[i] > table[max])

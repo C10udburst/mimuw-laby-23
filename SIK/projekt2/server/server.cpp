@@ -37,9 +37,9 @@ void server::Server::handle_new(utils::Connection *conn) {
         }
         try {
             handle_game(clients[seat]);
-        } catch (const errors::ConnClosedError &e) {
-            clients[seat].release();
         }
+        catch (const errors::ConnClosedError &e) { clients[seat].release(); }
+        catch (const errors::TimeoutError &e) { clients[seat].release(); }
     } catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << std::endl;
     }
@@ -55,6 +55,9 @@ void server::Server::handle_game(server::Client &client) {
         if (!client.dirty) {
             sync.barrier(client);
             client.dirty = true;
+        } else {
+            for (auto &msg: taken)
+                client.connection->writeline(msg);
         }
         auto game = gamefile.get_game(game_id);
         if (game->rule == kierki::Rule::NIL)
@@ -74,17 +77,17 @@ void server::Server::handle_game(server::Client &client) {
                     game->reset_table();
 
                 do {
+                    client.connection->writeline(make_trick(game, draw));
+                    kierki::Card played_card{};
                     try {
-                        client.connection->writeline(make_trick(game, draw));
                         auto ss = utils::parseline(client.connection->readline(), "TRICK" + std::to_string(draw));
-                        kierki::Card played_card{};
                         ss >> played_card;
-                        if (!game->play_card(played_card, client.seat)) {
-                            client.connection->writeline(make_wrong(draw));
-                            continue;
-                        }
-                        break;
-                    } catch (const errors::TimeoutError &e) {}
+                    } catch (const errors::TimeoutError &e) { continue; }
+                    if (!game->play_card(played_card, client.seat)) {
+                        client.connection->writeline(make_wrong(draw));
+                        continue;
+                    }
+                    break;
                 } while (true);
 
                 if (player < 3) {
@@ -96,23 +99,34 @@ void server::Server::handle_game(server::Client &client) {
                 }
 
                 sync.barrier(client);
-                // TODO: dont send all at once, send one by one
-                try {
-                    int loser = game->get_loser();
-                    if (loser == client.seat) {
-                        auto score = game->calculate_score(draw);
-                        client.scores[GAME_SCORE] += score;
-                        client.scores[TOTAL_SCORE] += score;
-                        game->first_seat = loser;
-                    }
+                int loser = game->get_loser();
+                if (loser == client.seat) {
+                    auto score = game->calculate_score(draw);
+                    client.scores[GAME_SCORE] += score;
+                    client.scores[TOTAL_SCORE] += score;
+                }
+                if (player == 0) {
                     std::stringstream ss;
+                    ss << "TAKEN";
+                    ss << draw;
                     for (auto &card: game->table)
                         ss << card;
                     ss << seat2int[loser] << "\r\n";
-                    client.connection->writeline("TAKEN" + std::to_string(draw) + ss.str());
+                    taken.push_back(ss.str());
+                } else {
+                    sync.sem_sleep(client);
                 }
-                catch (const errors::MainError &e) {
-                    sync.barrier(client);
+                auto conn_broken = false;
+                try {
+                    client.connection->writeline(taken.back());
+                }
+                catch (errors::ConnClosedError& e) { conn_broken = true; }
+                catch (errors::TimeoutError& e) { conn_broken = true; }
+                if (player < 3) {
+                    auto next_client = ((player + 1) + game->first_seat) % 4;
+                    sync.sem_wake(next_client);
+                }
+                if (conn_broken) {
                     client.release();
                     return;
                 }
@@ -136,7 +150,7 @@ inline std::string make_deal(const server::Game *game, int seat) {
     msg[4] += game->rule;
     msg[5] = seat2int[game->first_seat];
     std::stringstream ss;
-    for (auto &card: game->cards[seat])
+    for (auto &card: game->cards_initial[seat])
         ss << card;
     ss << "\r\n";
     return msg + ss.str();

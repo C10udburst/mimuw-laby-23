@@ -10,6 +10,7 @@ namespace server {
         kierki::Rule rule = kierki::Rule::NIL;
         int8_t first_seat{};
         kierki::Card cards[4][13];
+        kierki::Card cards_initial[4][13];
         kierki::Card table[4] = {};
     public:
          bool play_card(kierki::Card card, int seat);

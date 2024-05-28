@@ -1,9 +1,9 @@
 #include <arpa/inet.h>
-#include <sstream>
 #include <sys/poll.h>
 #include <cstring>
 #include <iostream>
 #include <netdb.h>
+#include <regex>
 #include "common.h"
 #include "client.h"
 
@@ -113,21 +113,122 @@ int main(int argc, char *argv[]) {
         conn.writeline(iam);
     }
 
+    auto player = automatic ? reinterpret_cast<client::IPlayer *>(new client::AutoPlayer())
+                            : reinterpret_cast<client::IPlayer *>(new client::HumanPlayer());
+
     auto line = conn.readline();
+    if (!automatic)
+        std::cout << line;
     if (line.starts_with('B')) {
-        auto ss = utils::parseline(line, "BUSY");
-        std::string busylist;
-        ss >> busylist;
-        std::cout << "Place taken, list of taken places received: ";
-        for (unsigned int i = 0; i < busylist.size(); i++) {
-            std::cout << busylist[i];
-            if (i + 1 < busylist.size()) {
-                std::cout << ", ";
-            }
+        if (!automatic) {
+            auto ss = utils::parseline(line, "BUSY");
+            std::string busylist;
+            ss >> busylist;
+            std::cout << "Place taken, list of taken places received: ";
+            client::print_list(busylist);
+            std::cout << "." << std::endl;
         }
-        std::cout << "." << std::endl;
+        delete player;
         return 1;
     }
+
+    pollfd pfd[2];
+    pfd[0].fd = conn.fd;
+    pfd[0].events = POLLIN;
+    pfd[1].fd = STDIN_FILENO;
+    pfd[1].events = automatic ? 0 : POLLIN;
+
+    while (true) {
+        auto ss = utils::parseline(line, "DEAL");
+        client::Deal deal;
+        ss >> deal;
+        player->hand = deal.cards;
+        if (!automatic) {
+            std::cout << "New deal " << deal.rule << ": staring place " << deal.first_player << ", your cards: ";
+            client::print_list(player->hand);
+            std::cout << "." << std::endl;
+        }
+        while (true) {
+            if (poll(pfd, 2, -1) == -1) {
+                std::cerr << "poll failed: " << strerror(errno) << std::endl;
+                delete player;
+                return 1;
+            }
+            if (pfd[0].revents & POLLIN) {
+                line = conn.readline();
+                if (!automatic)
+                    std::cout << line;
+                if (line.starts_with("WR") && !automatic) {
+                    auto ss2 = utils::parseline(line, "WRONG");
+                    int draw;
+                    ss2 >> draw;
+                    std::cout << "Wrong message received in trick " << draw << "." << std::endl;
+                }
+                if (line.starts_with("TR")) {
+                    client::Trick trick;
+                    trick.from_string(line);
+                    player->trick_id = trick.draw;
+                    if (!automatic) {
+                        std::cout << "Trick: (" << trick.draw << ") ";
+                        client::print_list(trick.table);
+                        std::cout << std::endl;
+                        std::cout << "Available: ";
+                        client::print_list(player->hand);
+                        std::cout << std::endl;
+                    }
+                    conn.writeline(player->trick(trick.table));
+                }
+                if (line.starts_with("TA")) {
+                    client::Taken taken;
+                    taken.from_string(line);
+                    for (auto &table_card: taken.table) {
+                        for (auto &hand_card: player->hand) {
+                            if (table_card == hand_card) {
+                                hand_card.marknull();
+                                goto break_for_taken_table;
+                            }
+                        }
+                    }
+                    break_for_taken_table:
+                    if (!automatic) {
+                        std::cout << "A trick " << taken.draw << " is taken by " << taken.loser << ", cards: ";
+                        client::print_list(taken.table);
+                        std::cout << "." << std::endl;
+                    }
+                    if (taken.loser == seat) {
+                        // TODO: ostatnia gra, a nie wszystkie gry
+                        player->taken.push_back(taken.table);
+                    }
+
+                }
+                continue;
+            }
+
+            if (pfd[1].revents & POLLIN) {
+                auto line2 = utils::readline(STDIN_FILENO);
+                if (line2.starts_with("!")) {
+                    auto ss2 = utils::parseline(line2, "!");
+                    kierki::Card card;
+                    ss2 >> card;
+                    conn.writeline("TRICK" + std::to_string(player->trick_id) + card.to_string() + "\r\n");
+                }
+                if (line2.starts_with("cards")) {
+                    std::cout << "Your cards: ";
+                    client::print_list(player->hand);
+                    std::cout << std::endl;
+                }
+                if (line2.starts_with("tricks")) {
+                    std::cout << "Taken tricks: ";
+                    for (auto &trick: player->taken) {
+                        client::print_list(trick);
+                        std::cout << std::endl;
+                    }
+                    std::cout << std::endl;
+                }
+            }
+        }
+    }
+
 }
 
 struct sockaddr_in get_server_address(char const *host, uint16_t port, bool ipv4) {

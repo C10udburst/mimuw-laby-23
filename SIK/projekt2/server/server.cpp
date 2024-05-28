@@ -96,7 +96,7 @@ void server::Server::handle_game(server::Client &client) {
                 }
 
                 sync.barrier(client);
-
+                // TODO: dont send all at once, send one by one
                 try {
                     int loser = game->get_loser();
                     if (loser == client.seat) {

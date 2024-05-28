@@ -35,6 +35,7 @@ namespace kierki {
         Suit suit = Suit::NIL;
 
         void marknull();
+        std::string to_string() const;
 
         [[nodiscard]] bool isnull() const;
     };

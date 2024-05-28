@@ -54,16 +54,7 @@ std::istream &operator>>(std::istream &is, kierki::Card &card) {
 }
 
 std::ostream &operator<<(std::ostream &os, const kierki::Card &card) {
-    if (card.isnull())
-        return os;
-
-    if (card.rank != kierki::Rank::TEN)
-        os.write(rank2str.data() + static_cast<int>(card.rank), 1);
-    else
-        os.write("10", 2);
-
-    os.write(suit2str.data() + static_cast<int>(card.suit), 1);
-
+    os << card.to_string();
     return os;
 }
 
@@ -73,4 +64,17 @@ void kierki::Card::marknull() {
 
 bool kierki::Card::isnull() const {
     return suit == Suit::NIL;
+}
+
+std::string kierki::Card::to_string() const {
+    if (isnull())
+        return "";
+
+    if (rank == kierki::Rank::TEN)
+        return "10" + std::string(suit2str.data() + static_cast<int>(suit), 1);
+
+    std::string str = "2H";
+    str[0] = rank2str[static_cast<int>(rank)];
+    str[1] = suit2str[static_cast<int>(suit)];
+    return str;
 }

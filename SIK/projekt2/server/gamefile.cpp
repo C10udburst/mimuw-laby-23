@@ -61,8 +61,9 @@ bool server::Game::play_card(kierki::Card card, int seat) {
                 c.marknull();
                 return true;
             } else {
+                auto player = (4 + seat - first_seat) % 4;
                 if (card.suit == table[0].suit) {
-                    table[seat] = card;
+                    table[player] = card;
                     c.marknull();
                     return true;
                 }
@@ -70,7 +71,7 @@ bool server::Game::play_card(kierki::Card card, int seat) {
                     if (c2.suit == table[0].suit)
                         return false;
                 }
-                table[seat] = card;
+                table[player] = card;
                 c.marknull();
                 return true;
 
@@ -118,12 +119,14 @@ int server::Game::calculate_score(int deal) {
 }
 
 int server::Game::get_loser() {
-    auto max = first_seat;
+    // TODO: zawsze zwraca first_seat??
+
+    auto max = 0;
     for (int8_t i = 0; i < 4; i++) {
         if (table[i] > table[max])
             max = i;
     }
-    return max;
+    return (max + first_seat) % 4;
 }
 
 void server::Game::reset_table() {

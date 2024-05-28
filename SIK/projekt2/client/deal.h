@@ -7,7 +7,7 @@ namespace client {
     struct Deal {
         kierki::Rule rule;
         char first_player;
-        kierki::Card cards[13];
+        std::array<kierki::Card, 13> cards;
     };
 }
 

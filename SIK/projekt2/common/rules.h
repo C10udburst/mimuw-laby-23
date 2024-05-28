@@ -24,7 +24,6 @@ namespace kierki {
         ALL = 7
     };
 
-    int32_t score(Rule rule, std::array<Card, 4> &hand, int trick);
     std::ostream &operator<<(std::ostream &os, const Rule &rule);
     std::istream &operator>>(std::istream &is, Rule &rule);
 }

@@ -54,16 +54,27 @@ void server::Server::handle_game(server::Client &client) {
     for (int game_id = sync.current_game ;; game_id++) {
         if (!client.dirty) {
             sync.barrier(client);
-            client.dirty = true;
-        } else {
-            for (auto &msg: taken)
-                client.connection->writeline(msg);
         }
         auto game = gamefile.get_game(game_id);
         if (game->rule == kierki::Rule::NIL)
             break;
 
-        client.connection->writeline(make_deal(game, client.seat));
+        try {
+            client.connection->writeline(make_deal(game, client.seat));
+            if (client.dirty) {
+                for (auto &msg: taken)
+                    client.connection->writeline(msg);
+            }
+        } catch (const errors::ConnClosedError &e) {
+            client.dirty = true;
+            throw e;
+        } catch (const errors::TimeoutError &e) {
+            client.dirty = true;
+            throw e;
+        }
+        client.dirty = true;
+
+
 
         auto player = (4 + client.seat - game->first_seat) % 4;
         for (int draw = sync.current_draw; draw < 13; draw++) {

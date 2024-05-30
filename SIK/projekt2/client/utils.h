@@ -8,7 +8,8 @@
 
 namespace client {
     // Function to get the trick from the line assuming its either 1, 10, 11, or 12
-    std::string get_trick1(const std::string &line, const std::string &packet_type);
+    std::string get_trick1(const std::string &line);
+    std::string get_taken1(const std::string &line);
 
     template<typename T>
     void print_list(T list) {

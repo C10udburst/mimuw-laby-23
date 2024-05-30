@@ -33,7 +33,7 @@ namespace utils {
         return static_cast<uint16_t>(p);
     }
 
-    std::string readline(int fd) {
+    std::string readline(int fd, size_t min_line_length) {
         char buf[max_line_length + 1];
         auto n = read(fd, buf, min_line_length - 1);
         if (n == -1) {

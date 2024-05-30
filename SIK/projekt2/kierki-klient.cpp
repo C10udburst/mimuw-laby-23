@@ -128,17 +128,17 @@ int main(int argc, char *argv[]) {
             client::print_list(busylist);
             std::cout << "." << std::endl;
         }
-        delete player;
+        delete player; // TODO: remove warning bout abstract non-virtual destructor
         return 1;
     }
 
     pollfd pfd[2];
     pfd[0].fd = conn.fd;
-    pfd[0].events = POLLIN | POLLHUP;
+    pfd[0].events = POLLIN;
     pfd[1].fd = STDIN_FILENO;
     pfd[1].events = automatic ? 0 : POLLIN;
 
-    while (true) {
+    while (true) { // TODO: fix connclosed error
         auto ss = utils::parseline(line, "DEAL");
         client::Deal deal;
         ss >> deal;
@@ -205,39 +205,20 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 if (line.starts_with("SC")) {
-
+                    // TODO: implement
                 }
                 if (line.starts_with("TO")) {
-
+                    // TODO: implement
                 }
                 continue;
             }
 
-            if (pfd[0].revents & POLLHUP) {
-                delete player;
-                return 0;
-            }
-
             if (pfd[1].revents & POLLIN) {
                 auto line2 = utils::readline(STDIN_FILENO);
-                if (line2.starts_with("!")) {
-                    auto ss2 = utils::parseline(line2, "!");
-                    kierki::Card card;
-                    ss2 >> card;
+                auto human_player = reinterpret_cast<client::HumanPlayer *>(player);
+                auto card = human_player->parse_cmd(line2);
+                if (!card.isnull()) {
                     conn.writeline("TRICK" + std::to_string(player->trick_id) + card.to_string() + "\r\n");
-                }
-                if (line2.starts_with("cards")) {
-                    std::cout << "Your cards: ";
-                    client::print_list(player->hand);
-                    std::cout << std::endl;
-                }
-                if (line2.starts_with("tricks")) {
-                    std::cout << "Taken tricks: ";
-                    for (auto &trick: player->taken) {
-                        client::print_list(trick);
-                        std::cout << std::endl;
-                    }
-                    std::cout << std::endl;
                 }
             }
         }

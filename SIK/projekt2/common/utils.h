@@ -9,7 +9,7 @@ namespace utils {
     std::string addr2str(const struct sockaddr *addr, socklen_t addrlen);
     std::string now2str();
 
-    std::string readline(int fd);
+    std::string readline(int fd, size_t min_line_length = 6);
     void writeline(int fd, const std::string &line);
     std::stringstream parseline(const std::string &line, const std::string &type);
 }

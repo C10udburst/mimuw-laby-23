@@ -25,6 +25,7 @@ namespace client {
     template<size_t N>
     void print_list(std::array<kierki::Card, N> list) {
         for (unsigned int i = 0; i < list.size(); i++) {
+            if (list[i].isnull()) continue;
             std::cout << list[i];
             if (i + 1 < list.size() && !list[i + 1].isnull()) {
                 std::cout << ", ";

@@ -52,34 +52,35 @@ inline std::string make_wrong(int draw);
 
 void server::Server::handle_game(server::Client &client) {
     for (int game_id = sync.current_game ;; game_id++) {
-        if (!client.dirty) {
+        if (client.state == BEFORE_DRAW)
             sync.barrier(client);
-        }
         auto game = gamefile.get_game(game_id);
         if (game->rule == kierki::Rule::NIL)
             break;
 
         try {
             client.connection->writeline(make_deal(game, client.seat));
-            if (client.dirty) {
+            if (client.state == BEFORE_TRICK) {
                 for (auto &msg: taken)
                     client.connection->writeline(msg);
             }
         } catch (const errors::ConnClosedError &e) {
-            client.dirty = true;
+            client.state = BEFORE_TRICK;
             throw e;
         } catch (const errors::TimeoutError &e) {
-            client.dirty = true;
+            client.state = BEFORE_TRICK;
             throw e;
         }
-        client.dirty = true;
+        client.state = BEFORE_TRICK;
 
-        // TODO: draw resets after reconnect
-        // TODO: first seat is wrong, cuz player should be calculated each draw, but that breaks shit
-        auto player = (4 + client.seat - game->first_seat) % 4;
         for (int draw = sync.current_draw; draw < 13; draw++) {
+            if (client.state == AFTER_TRICK) {
+                sync.barrier(client);
+            }
             client.current_draw = draw;
-            if (player >= sync.current_player) {
+            sync.current_draw = draw;
+            auto player = (4 + client.seat - game->first_seat) % 4;
+            if (client.state == BEFORE_TRICK) {
                 if (player > sync.current_player) {
                     sync.sem_sleep(client);
                     sync.current_player = player;
@@ -101,6 +102,8 @@ void server::Server::handle_game(server::Client &client) {
                     break;
                 } while (true);
 
+                client.state = AFTER_TRICK;
+
                 if (player < 3) {
                     auto next_client = ((player + 1) + game->first_seat) % 4;
                     sync.current_player = player + 1;
@@ -109,6 +112,7 @@ void server::Server::handle_game(server::Client &client) {
                     sync.current_player = 0;
                 }
 
+                auto next_client = ((player + 1) + game->first_seat) % 4;
                 sync.barrier(client);
                 int loser = game->get_loser();
                 if (loser == client.seat) {
@@ -135,7 +139,6 @@ void server::Server::handle_game(server::Client &client) {
                 catch (errors::ConnClosedError& e) { conn_broken = true; }
                 catch (errors::TimeoutError& e) { conn_broken = true; }
                 if (player < 3) {
-                    auto next_client = ((player + 1) + game->first_seat) % 4;
                     sync.sem_wake(next_client);
                 }
                 if (conn_broken) {
@@ -143,19 +146,23 @@ void server::Server::handle_game(server::Client &client) {
                     return;
                 }
 
+                client.state = BEFORE_TRICK;
+
                 sync.barrier(client);
             }
         }
 
-        client.dirty = false;
+        client.state = BEFORE_DRAW;
         sync.current_draw = 0;
         sync.current_game = game_id + 1;
         client.connection->writeline(make_score(*this, "SCORE", GAME_SCORE));
         client.connection->writeline(make_score(*this, "TOTAL", TOTAL_SCORE));
+        client.scores[GAME_SCORE] = 0;
         if (client.seat == 0)
             taken.clear();
     }
     sync.game_running = false;
+    sync.wake_main();
 }
 
 

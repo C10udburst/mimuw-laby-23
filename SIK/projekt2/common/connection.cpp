@@ -1,4 +1,3 @@
-#include <csignal>
 #include <iostream>
 #include <syncstream>
 #include "connection.h"

@@ -12,7 +12,9 @@ server::Sync::Sync() {
             if (pipe(i))
                 throw errors::MainError("pipe failed: " + std::string(strerror(errno)));
         }
-        }
+    }
+    if (pipe(main_sem))
+        throw errors::MainError("pipe failed: " + std::string(strerror(errno)));
 }
 
 server::Sync::~Sync() {
@@ -22,6 +24,8 @@ server::Sync::~Sync() {
             close(i[1]);
         }
     }
+    close(main_sem[0]);
+    close(main_sem[1]);
 }
 
 void server::Sync::wait(const server::Client& client, int type) const {
@@ -71,4 +75,15 @@ void server::Sync::sem_wake(int seat) const {
 
 void server::Sync::sem_sleep(const server::Client& client) const {
     wait(client, Semaphore);
+}
+
+void server::Sync::sleep_main() const {
+    char c;
+    if (read(main_sem[0], &c, 1) == -1)
+        throw errors::MainError("read failed: " + std::string(strerror(errno)));
+}
+
+void server::Sync::wake_main() const {
+    if (write(main_sem[1], "M", 1) == -1)
+        throw errors::MainError("write failed: " + std::string(strerror(errno)));
 }

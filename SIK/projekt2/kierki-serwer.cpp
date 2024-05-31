@@ -90,33 +90,48 @@ int main(int argc, char *argv[]) {
     }
 
     auto my_addr = utils::addr2str(reinterpret_cast<sockaddr *>(&server_address), sizeof(server_address));
-    while (server.sync.game_running) {
-        sockaddr_in client_address{};
-        socklen_t client_address_size = sizeof(client_address);
-        // TODO: allow to interrupt when game is finished
-        int client_socket = accept(server_socket, (sockaddr *) &client_address, &client_address_size);
-        if (client_socket == -1) {
-            std::cerr << "Error accepting connection" << std::endl;
-            return 1;
-        }
 
-        timeval tv = {.tv_sec = timeout, .tv_usec = 0};
-        if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1) {
-            std::cerr << "Error setting timeout" << std::endl;
-            return 1;
-        }
-        if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
-            std::cerr << "Error setting SIGPIPE handler" << std::endl;
-            return 1;
-        }
+    auto retcode = 0;
 
-        auto conn = new utils::Connection(client_socket, my_addr, utils::addr2str(reinterpret_cast<sockaddr *>(&client_address), client_address_size));
-        conn->should_log = true;
+    auto thread = std::thread([&server, server_socket, timeout, my_addr, &retcode] {
+        while (server.sync.game_running) {
+            sockaddr_in client_address{};
+            socklen_t client_address_size = sizeof(client_address);
+            int client_socket = accept(server_socket, (sockaddr *) &client_address, &client_address_size);
+            if (client_socket == -1) {
+                std::cerr << "Error accepting connection" << std::endl;
+                retcode = 1;
+                server.sync.wake_main();
+                return;
+            }
 
-        auto thread = std::thread([&server, conn] {
-            server.handle_new(conn);
-        });
-        thread.detach();
-    }
-    return 0;
+            timeval tv = {.tv_sec = timeout, .tv_usec = 0};
+            if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1) {
+                std::cerr << "Error setting timeout" << std::endl;
+                return;
+                //retcode = 1;
+                //server.sync.wake_main();
+            }
+            if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+                std::cerr << "Error setting SIGPIPE handler" << std::endl;
+                return;
+                //retcode = 1;
+                //server.sync.wake_main();
+            }
+
+            auto conn = new utils::Connection(client_socket, my_addr, utils::addr2str(reinterpret_cast<sockaddr *>(&client_address), client_address_size));
+            conn->should_log = true;
+
+            auto thread = std::thread([&server, conn] {
+                server.handle_new(conn);
+            });
+            thread.detach();
+        }
+    });
+
+    thread.detach();
+
+    server.sync.sleep_main();
+
+    return retcode;
 }

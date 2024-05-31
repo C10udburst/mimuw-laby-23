@@ -6,12 +6,18 @@
 
 namespace server {
 
+    enum State {
+        BEFORE_DRAW,
+        BEFORE_TRICK,
+        AFTER_TRICK,
+    };
+
     struct Client {
         std::mutex mutex;
         utils::Connection *connection = nullptr;
         int seat{};
         int current_draw = 0;
-        bool dirty = false;
+        State state = BEFORE_DRAW;
         int scores[2] = {0, 0};
 
         ~Client() {

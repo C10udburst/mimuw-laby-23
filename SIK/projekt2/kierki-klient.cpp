@@ -113,8 +113,7 @@ int main(int argc, char *argv[]) {
         conn.writeline(iam);
     }
 
-    auto player = automatic ? reinterpret_cast<client::IPlayer *>(new client::AutoPlayer())
-                            : reinterpret_cast<client::IPlayer *>(new client::HumanPlayer());
+    auto player = client::Player{};
 
     auto line = conn.readline();
     if (!automatic)
@@ -128,7 +127,6 @@ int main(int argc, char *argv[]) {
             client::print_list(busylist);
             std::cout << "." << std::endl;
         }
-        delete player; // TODO: remove warning bout abstract non-virtual destructor
         return 1;
     }
 
@@ -138,89 +136,108 @@ int main(int argc, char *argv[]) {
     pfd[1].fd = STDIN_FILENO;
     pfd[1].events = automatic ? 0 : POLLIN;
 
-    while (true) { // TODO: fix connclosed error
-        auto ss = utils::parseline(line, "DEAL");
-        client::Deal deal;
-        ss >> deal;
-        player->hand = deal.cards;
-        if (!automatic) {
-            std::cout << "New deal " << deal.rule << ": staring place " << deal.first_player << ", your cards: ";
-            client::print_list(player->hand);
-            std::cout << "." << std::endl;
-        }
-        while (true) {
-            if (poll(pfd, 2, -1) == -1) {
-                std::cerr << "poll failed: " << strerror(errno) << std::endl;
-                delete player;
-                return 1;
+    while (true) {
+        try {
+            auto ss = utils::parseline(line, "DEAL");
+            client::Deal deal;
+            ss >> deal;
+            player.hand = deal.cards;
+            if (!automatic) {
+                std::cout << "New deal " << deal.rule << ": staring place " << deal.first_player << ", your cards: ";
+                client::print_list(player.hand);
+                std::cout << "." << std::endl;
             }
-            if (pfd[0].revents & POLLIN) {
-                line = conn.readline();
-                if (!automatic)
-                    std::cout << line;
-                if (line.starts_with("WR") && !automatic) {
-                    auto ss2 = utils::parseline(line, "WRONG");
-                    int draw;
-                    ss2 >> draw;
-                    std::cout << "Wrong message received in trick " << draw << "." << std::endl;
+            while (true) {
+                if (poll(pfd, 2, -1) == -1) {
+                    std::cerr << "poll failed: " << strerror(errno) << std::endl;
+                    return 1;
                 }
-                if (line.starts_with("DE")) {
-                    player->taken.clear();
-                    player->taken.reserve(13);
-                    break;
-                }
-                if (line.starts_with("TR")) {
-                    client::Trick trick;
-                    trick.from_string(line);
-                    player->trick_id = trick.draw;
-                    if (!automatic) {
-                        std::cout << "Trick: (" << trick.draw << ") ";
-                        client::print_list(trick.table);
-                        std::cout << std::endl;
-                        std::cout << "Available: ";
-                        client::print_list(player->hand);
-                        std::cout << std::endl;
+                if (pfd[0].revents & POLLIN) {
+                    line = conn.readline();
+                    if (!automatic)
+                        std::cout << line;
+                    if (line.starts_with("WR") && !automatic) {
+                        auto ss2 = utils::parseline(line, "WRONG");
+                        int draw;
+                        ss2 >> draw;
+                        std::cout << "Wrong message received in trick " << draw << "." << std::endl;
                     }
-                    conn.writeline(player->trick(trick.table));
-                }
-                if (line.starts_with("TA")) {
-                    client::Taken taken;
-                    taken.from_string(line);
-                    for (auto &table_card: taken.table) {
-                        for (auto &hand_card: player->hand) {
-                            if (table_card == hand_card) {
-                                hand_card.marknull();
-                                goto break_for_taken_table;
-                            }
+                    if (line.starts_with("DE")) {
+                        player.taken.clear();
+                        player.taken.reserve(13);
+                        break;
+                    }
+                    if (line.starts_with("TR")) {
+                        client::Trick trick;
+                        trick.from_string(line);
+                        player.trick_id = trick.draw;
+                        if (!automatic) {
+                            std::cout << "Trick: (" << trick.draw << ") ";
+                            client::print_list(trick.table);
+                            std::cout << std::endl;
+                            std::cout << "Available: ";
+                            client::print_list(player.hand);
+                            std::cout << std::endl;
+                        } else {
+                            conn.writeline("TRICK" + std::to_string(trick.draw) +
+                                           client::AutoPlayer::play(trick.table, player).to_string() + "\r\n");
                         }
                     }
-                    break_for_taken_table:
-                    if (!automatic) {
-                        std::cout << "A trick " << taken.draw << " is taken by " << taken.loser << ", cards: ";
-                        client::print_list(taken.table);
-                        std::cout << "." << std::endl;
+                    if (line.starts_with("TA")) {
+                        client::Taken taken;
+                        taken.from_string(line);
+                        for (auto &table_card: taken.table) {
+                            for (auto &hand_card: player.hand) {
+                                if (table_card == hand_card) {
+                                    hand_card.marknull();
+                                    goto break_for_taken_table;
+                                }
+                            }
+                        }
+                        break_for_taken_table:
+                        if (!automatic) {
+                            std::cout << "A trick " << taken.draw << " is taken by " << taken.loser << ", cards: ";
+                            client::print_list(taken.table);
+                            std::cout << "." << std::endl;
+                        }
+                        if (taken.loser == seat) {
+                            player.taken.push_back(taken.table);
+                        }
                     }
-                    if (taken.loser == seat) {
-                        player->taken.push_back(taken.table);
+                    if (line.starts_with("SC") && !automatic) {
+                        client::Scoring sc;
+                        sc.from_string(line, client::SCORE);
+                        std::cout << "The scores are:" << std::endl;
+                        for (auto &score: sc.scores) {
+                            std::cout << score.place << " | " << score.score << std::endl;
+                        }
                     }
+                    if (line.starts_with("TO") && !automatic) {
+                        client::Scoring sc;
+                        sc.from_string(line, client::TOTAL);
+                        std::cout << "The total scores are:" << std::endl;
+                        for (auto &score: sc.scores) {
+                            std::cout << score.place << " | " << score.score << std::endl;
+                        }
+                        return 0;
+                    }
+                    continue;
                 }
-                if (line.starts_with("SC")) {
-                    // TODO: implement
-                }
-                if (line.starts_with("TO")) {
-                    // TODO: implement
-                }
-                continue;
-            }
 
-            if (pfd[1].revents & POLLIN) {
-                auto line2 = utils::readline(STDIN_FILENO);
-                auto human_player = reinterpret_cast<client::HumanPlayer *>(player);
-                auto card = human_player->parse_cmd(line2);
-                if (!card.isnull()) {
-                    conn.writeline("TRICK" + std::to_string(player->trick_id) + card.to_string() + "\r\n");
+                if (pfd[1].revents & POLLIN) {
+                    auto line2 = utils::readline(STDIN_FILENO, sizeof "!3C\n" - 1);
+                    auto card = client::HumanPlayer::parse_cmd(line2, player);
+                    if (!card.isnull()) {
+                        conn.writeline("TRICK" + std::to_string(player.trick_id) + card.to_string() + "\r\n");
+                    }
                 }
             }
+        } catch (errors::ConnClosedError &e) {
+            if (!line.starts_with("TOTAL")) {
+                std::cerr << "Connection closed by the server" << std::endl;
+                return 1;
+            }
+            return 0;
         }
     }
 

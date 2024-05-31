@@ -24,7 +24,7 @@ common.o: common/card.o common/utils.o common/connection.o common/rules.o
 server.o: server/client.o server/gamefile.o server/sync.o server/server.o
 	ld -r $^ -o $@
 
-client.o: client/deal.o client/iplayer.o client/humanplayer.o client/autoplayer.o client/trick.o client/utils.o client/taken.o
+client.o: client/deal.o client/player.o client/humanplayer.o client/autoplayer.o client/trick.o client/utils.o client/taken.o client/scoring.o
 	ld -r $^ -o $@
 
 kierki-serwer: kierki-serwer.o common.o server.o

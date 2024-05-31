@@ -21,6 +21,7 @@ namespace client {
         }
     }
 
+    // TODO: broken for first digit
     template<size_t N>
     void print_list(std::array<kierki::Card, N> list) {
         for (unsigned int i = 0; i < list.size(); i++) {

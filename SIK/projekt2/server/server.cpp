@@ -74,8 +74,8 @@ void server::Server::handle_game(server::Client &client) {
         }
         client.dirty = true;
 
-
-
+        // TODO: draw resets after reconnect
+        // TODO: first seat is wrong, cuz player should be calculated each draw, but that breaks shit
         auto player = (4 + client.seat - game->first_seat) % 4;
         for (int draw = sync.current_draw; draw < 13; draw++) {
             client.current_draw = draw;
@@ -115,6 +115,7 @@ void server::Server::handle_game(server::Client &client) {
                     auto score = game->calculate_score(draw);
                     client.scores[GAME_SCORE] += score;
                     client.scores[TOTAL_SCORE] += score;
+                    game->first_seat = client.seat;
                 }
                 if (player == 0) {
                     std::stringstream ss;
@@ -151,6 +152,8 @@ void server::Server::handle_game(server::Client &client) {
         sync.current_game = game_id + 1;
         client.connection->writeline(make_score(*this, "SCORE", GAME_SCORE));
         client.connection->writeline(make_score(*this, "TOTAL", TOTAL_SCORE));
+        if (client.seat == 0)
+            taken.clear();
     }
     sync.game_running = false;
 }

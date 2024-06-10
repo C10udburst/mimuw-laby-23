@@ -29,7 +29,6 @@ server::Sync::~Sync() {
 }
 
 void server::Sync::wait(const server::Client& client, int type) const {
-    // TODO: check if this is fucked or fine
     pollfd pfd[2];
     /*
      * pfd[0] is the pipe for the client

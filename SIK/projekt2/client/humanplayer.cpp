@@ -1,9 +1,7 @@
-#include <array>
 #include <iostream>
 #include <sstream>
 #include "humanplayer.h"
 #include "utils.h"
-#include "../common/utils.h"
 
 namespace client {
     kierki::Card HumanPlayer::parse_cmd(const std::string &line, const Player &player) {

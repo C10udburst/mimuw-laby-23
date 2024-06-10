@@ -4,6 +4,7 @@
 #include <string>
 #include <iostream>
 #include <array>
+#include <vector>
 #include "../common/card.h"
 
 namespace client {
@@ -21,13 +22,17 @@ namespace client {
         }
     }
 
-    // TODO: broken for first digit
     template<size_t N>
     void print_list(std::array<kierki::Card, N> list) {
-        for (unsigned int i = 0; i < list.size(); i++) {
-            if (list[i].isnull()) continue;
-            std::cout << list[i];
-            if (i + 1 < list.size() && !list[i + 1].isnull()) {
+        std::vector<kierki::Card> vec;
+        vec.reserve(N);
+        for (auto &card: list) {
+            if (!card.isnull())
+                vec.push_back(card);
+        }
+        for (auto &card: vec) {
+            std::cout << card;
+            if (&card != &vec.back()) {
                 std::cout << ", ";
             }
         }

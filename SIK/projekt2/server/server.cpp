@@ -74,14 +74,14 @@ void server::Server::handle_game(server::Client &client) {
         client.state = BEFORE_TRICK;
 
         for (int draw = sync.current_draw; draw < 13; draw++) {
-            if (client.state == AFTER_TRICK) {
+            if (client.state == AFTER_TRICK) { // wait for next draw for other players
                 sync.barrier(client);
             }
             client.current_draw = draw;
             sync.current_draw = draw;
             auto player = (4 + client.seat - game->first_seat) % 4;
-            if (client.state == BEFORE_TRICK) {
-                if (player > sync.current_player) {
+            if (client.state == BEFORE_TRICK) { // wait for other players before game starts
+                if (player > sync.current_player) { // wait for turn
                     sync.sem_sleep(client);
                     sync.current_player = player;
                 }
@@ -112,14 +112,15 @@ void server::Server::handle_game(server::Client &client) {
                     sync.current_player = 0;
                 }
 
-                auto next_client = ((player + 1) + game->first_seat) % 4;
                 sync.barrier(client);
+                auto next_client = ((player + 1) + game->first_seat) % 4;
                 int loser = game->get_loser();
+                sync.barrier(client);
                 if (loser == client.seat) {
                     auto score = game->calculate_score(draw);
                     client.scores[GAME_SCORE] += score;
                     client.scores[TOTAL_SCORE] += score;
-                    game->first_seat = client.seat;
+                    game->first_seat = client.seat; // make loser first next trick
                 }
                 if (player == 0) {
                     std::stringstream ss;
@@ -155,11 +156,12 @@ void server::Server::handle_game(server::Client &client) {
         client.state = BEFORE_DRAW;
         sync.current_draw = 0;
         sync.current_game = game_id + 1;
-        client.connection->writeline(make_score(*this, "SCORE", GAME_SCORE));
-        client.connection->writeline(make_score(*this, "TOTAL", TOTAL_SCORE));
+        auto gamescore = make_score(*this, "SCORE", GAME_SCORE);
         client.scores[GAME_SCORE] = 0;
         if (client.seat == 0)
             taken.clear();
+        client.connection->writeline(gamescore);
+        client.connection->writeline(make_score(*this, "TOTAL", TOTAL_SCORE));
     }
     sync.game_running = false;
     sync.wake_main();

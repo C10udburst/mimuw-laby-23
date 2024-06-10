@@ -7,8 +7,6 @@
 #include "common.h"
 #include "client.h"
 
-struct sockaddr_in get_server_address(char const *host, uint16_t port, bool ipv4);
-
 int main(int argc, char *argv[]) {
     char *host = nullptr;
     u_int16_t port = 0;
@@ -81,30 +79,55 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
-    auto server_address = get_server_address(host, port, ipv4);
 
-    int server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket == -1) {
-        std::cerr << "Error creating socket" << std::endl;
-        return 1;
+    int server_socket = -1;
+    struct sockaddr server_address{};
+
+    { // resolve host and connect
+        struct addrinfo hints{};
+        memset(&hints, 0, sizeof(struct addrinfo));
+        hints.ai_family = ipv4 ? AF_INET : AF_INET6;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_protocol = 0;
+
+        struct addrinfo *address_result;
+        int errcode = getaddrinfo(host, std::to_string(port).c_str(), &hints, &address_result);
+        if (errcode != 0) {
+            std::cerr << "getaddrinfo: " << gai_strerror(errcode) << std::endl;
+            return 1;
+        }
+
+        for (auto *rp = address_result; rp != nullptr; rp = rp->ai_next) {
+            server_socket = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+            if (server_socket == -1) {
+                continue;
+            }
+            if (connect(server_socket, rp->ai_addr, rp->ai_addrlen) != -1) {
+                memcpy(&server_address, rp->ai_addr, rp->ai_addrlen);
+                break;
+            }
+            close(server_socket);
+            server_socket = -1;
+        }
+
+        freeaddrinfo(address_result);
     }
 
-    if (connect(server_socket, (sockaddr *) &server_address, sizeof(server_address)) == -1) {
-        std::cerr << "Error connecting to the server" << std::endl;
+    if (server_socket == -1) {
+        std::cerr << "Cannot connect to the server" << std::endl;
         return 1;
     }
 
     sockaddr_in my_address{};
     socklen_t my_address_size = sizeof(my_address);
     if (getsockname(server_socket, (sockaddr *) &my_address, &my_address_size) == -1) {
-        std::cerr << "Error getting my address" << std::endl;
+        std::cerr << "Error getting my address: " << strerror(errno) << std::endl;
         return 1;
     }
 
     auto conn = utils::Connection(server_socket,
                                   utils::addr2str(reinterpret_cast<sockaddr *>(&my_address), my_address_size),
-                                  utils::addr2str(reinterpret_cast<sockaddr *>(&server_address),
-                                                  sizeof(server_address)));
+                                  host + std::string(":") + std::to_string(port));
     conn.should_log = automatic;
 
     { // send IAM
@@ -162,12 +185,12 @@ int main(int argc, char *argv[]) {
                         ss2 >> draw;
                         std::cout << "Wrong message received in trick " << draw << "." << std::endl;
                     }
-                    if (line.starts_with("DE")) {
+                    if (line.starts_with("DE")) { // DEAL
                         player.taken.clear();
                         player.taken.reserve(13);
                         break;
                     }
-                    if (line.starts_with("TR")) {
+                    if (line.starts_with("TR")) { // TRICK
                         client::Trick trick;
                         trick.from_string(line);
                         player.trick_id = trick.draw;
@@ -183,7 +206,7 @@ int main(int argc, char *argv[]) {
                                            client::AutoPlayer::play(trick.table, player).to_string() + "\r\n");
                         }
                     }
-                    if (line.starts_with("TA")) {
+                    if (line.starts_with("TA")) { // TAKEN
                         client::Taken taken;
                         taken.from_string(line);
                         for (auto &table_card: taken.table) {
@@ -204,7 +227,7 @@ int main(int argc, char *argv[]) {
                             player.taken.push_back(taken.table);
                         }
                     }
-                    if (line.starts_with("SC") && !automatic) {
+                    if (line.starts_with("SC") && !automatic) { // SCORE
                         client::Scoring sc;
                         sc.from_string(line, client::SCORE);
                         std::cout << "The scores are:" << std::endl;
@@ -212,14 +235,13 @@ int main(int argc, char *argv[]) {
                             std::cout << score.place << " | " << score.score << std::endl;
                         }
                     }
-                    if (line.starts_with("TO") && !automatic) {
+                    if (line.starts_with("TO") && !automatic) { // TOTAL
                         client::Scoring sc;
                         sc.from_string(line, client::TOTAL);
                         std::cout << "The total scores are:" << std::endl;
                         for (auto &score: sc.scores) {
                             std::cout << score.place << " | " << score.score << std::endl;
                         }
-                        return 0;
                     }
                     continue;
                 }
@@ -233,36 +255,15 @@ int main(int argc, char *argv[]) {
                 }
             }
         } catch (errors::ConnClosedError &e) {
-            if (!line.starts_with("TOTAL")) {
+            if (!line.starts_with("TOTAL")) { // last message must be TOTAL
                 std::cerr << "Connection closed by the server" << std::endl;
                 return 1;
             }
             return 0;
+        } catch (errors::MainError &e) {
+            std::cerr << e.what() << std::endl;
+            return 1;
         }
     }
 
-}
-
-struct sockaddr_in get_server_address(char const *host, uint16_t port, bool ipv4) {
-    struct addrinfo hints{};
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = ipv4 ? AF_INET : AF_INET6;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_protocol = IPPROTO_UDP;
-
-    struct addrinfo *address_result;
-    int errcode = getaddrinfo(host, nullptr, &hints, &address_result);
-    if (errcode != 0) {
-        throw std::runtime_error("getaddrinfo: " + std::string(gai_strerror(errcode)));
-    }
-
-    struct sockaddr_in send_address{};
-    send_address.sin_family = ipv4 ? AF_INET : AF_INET6;
-    send_address.sin_addr.s_addr =       // IP address
-            ((struct sockaddr_in *) (address_result->ai_addr))->sin_addr.s_addr;
-    send_address.sin_port = htons(port); // port from the command line
-
-    freeaddrinfo(address_result);
-
-    return send_address;
 }

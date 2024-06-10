@@ -3,12 +3,10 @@
 
 #include "player.h"
 
-namespace client {
+namespace client::HumanPlayer {
+    kierki::Card parse_cmd(const std::string& line, const client::Player& player);
+}
 
-    namespace HumanPlayer {
-        kierki::Card parse_cmd(const std::string& line, const client::Player& player);
-    };
-
-} // client
+// client
 
 #endif //PROJEKT2_HUMANPLAYER_H

@@ -3,11 +3,13 @@ CFLAGS = -Wall -Wextra -std=c++20 -g -O0 -pthread
 
 all: kierki-serwer kierki-klient
 
+.PHONY: clean wireshark kierki.tgz
+
 clean:
 	rm -f *.o */*.o kierki-serwer kierki-klient kierki.tgz
 
-kierki.tgz: Makefile.release *.cpp *.h */*.cpp */*.h
-	tar --transform 'flags=r;s|Makefile.release|Makefile|' -czf $@ $^
+kierki.tgz: Makefile.release
+	tar --transform 'flags=r;s|Makefile.release|Makefile|' -czf $@ *.cpp *.h Makefile.release */*.cpp */*.h
 
 wireshark: kierki.lua
 	nohup wireshark -X lua_script:kierki.lua >/dev/null 2>&1 &

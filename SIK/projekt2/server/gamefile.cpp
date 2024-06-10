@@ -1,6 +1,5 @@
 #include "gamefile.h"
 #include "const.h"
-#include <sstream>
 #include <iostream>
 #include <cstring>
 
@@ -121,8 +120,7 @@ int server::Game::calculate_score(int deal) {
 }
 
 int server::Game::get_loser() {
-    // TODO: check if this is correct
-    auto max = 0;
+    int8_t max = 0;
     for (int8_t i = 0; i < 4; i++) {
         if (table[i] > table[max])
             max = i;

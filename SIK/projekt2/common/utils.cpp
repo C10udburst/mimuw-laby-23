@@ -1,7 +1,5 @@
-#include <cstdint>
 #include <cstdlib>
 #include <climits>
-#include <csignal>
 #include <cstring>
 #include <netinet/in.h>
 #include <netdb.h>
@@ -15,13 +13,8 @@
  * SCOREN4294967295E4294967295S4294967295W4294967295\r\n
  * TOTALN4294967295E4294967295S4294967295W4294967295\r\n
  * DEAL1N10C10C10C10C10C10C10C10C10C10C10C10C10C\r\n
- *
- * Possible smallest lines:
- * IAMN\r\n
- * TRICK0N\r\n
  */
 const auto max_line_length = 51;
-const auto min_line_length = 6;
 
 namespace utils {
     uint16_t read_port(const char *port) {
@@ -68,7 +61,7 @@ namespace utils {
             if (c == '\n')
                 break;
             if (r == 0) throw errors::ConnClosedError();
-            if (n >= max_line_length) throw errors::LineTooLongError();
+            if (n >= max_line_length) throw errors::LineTooLongError(std::string(buf, n));
         }
         buf[n] = '\0';
         return std::string(buf);
@@ -95,7 +88,7 @@ namespace utils {
     }
 
     std::string addr2str(const struct sockaddr *addr, socklen_t addrlen) {
-        char name[INET6_ADDRSTRLEN];
+        char name[INET6_ADDRSTRLEN + 5];
         char port[10];
         if (getnameinfo(addr, addrlen, name, sizeof(name), port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
             throw errors::MainError("getnameinfo failed: " + std::string(strerror(errno)));

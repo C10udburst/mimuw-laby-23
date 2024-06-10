@@ -2,6 +2,7 @@
 #include <syncstream>
 #include "connection.h"
 #include "utils.h"
+#include "errors.h"
 
 utils::Connection::Connection(int fd, std::string my_addr, std::string peer_addr) {
     this->fd = fd;
@@ -14,10 +15,16 @@ utils::Connection::~Connection() {
 }
 
 std::string utils::Connection::readline() const {
-    auto line = utils::readline(fd);
-    if (should_log)
-        std::osyncstream(std::cout) << "[" << peer_addr << "," << my_addr << "," << now2str() << "] " << line;
-    return line;
+    try {
+        auto line = utils::readline(fd);
+        if (should_log)
+            std::osyncstream(std::cout) << "[" << peer_addr << "," << my_addr << "," << now2str() << "] " << line;
+        return line;
+    } catch (errors::LineTooLongError &e) {
+        if (should_log)
+            std::osyncstream(std::cout) << "[" << peer_addr << "," << my_addr << "," << now2str() << "] " << e.line_start << "\r\n";
+        throw e;
+    }
 }
 
 void utils::Connection::writeline(const std::string &line) const {

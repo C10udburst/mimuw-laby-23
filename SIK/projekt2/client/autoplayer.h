@@ -4,12 +4,10 @@
 #include "player.h"
 #include <array>
 
-namespace client {
+namespace client::AutoPlayer {
+    kierki::Card play(std::array<kierki::Card, 4> table, client::Player& player);
+}
 
-    namespace AutoPlayer {
-        kierki::Card play(std::array<kierki::Card, 4> table, client::Player& player);
-    };
-
-} // client
+// client
 
 #endif //PROJEKT2_AUTOPLAYER_H

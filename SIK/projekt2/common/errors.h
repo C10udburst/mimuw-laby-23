@@ -2,6 +2,7 @@
 #define PROJEKT2_ERRORS_H
 
 #include <stdexcept>
+#include <utility>
 
 namespace errors {
     class MainError : public std::runtime_error {
@@ -21,7 +22,8 @@ namespace errors {
 
     class LineTooLongError : public MainError {
     public:
-        explicit LineTooLongError() : MainError("Line too long") {}
+        std::string line_start;
+        explicit LineTooLongError(std::string line_start) : MainError("Line too long"), line_start(std::move(line_start)) {}
     };
 }
 

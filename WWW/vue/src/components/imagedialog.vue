@@ -8,13 +8,23 @@ const show = ref(false)
 const bus = new BroadcastChannel('imageSelected')
 
 bus.onmessage = (event) => {
-    show.value = true
-    const ws = new WebSocket('ws://localhost:8765')
-    ws.onmessage = (event) => {
-        imageData.value = JSON.parse(event.data)
-    }
-    ws.onopen = () => {
-        ws.send(event.data)
+    try {
+        show.value = true
+        const ws = new WebSocket('ws://localhost:8765')
+        ws.onmessage = (event) => {
+            try {
+                imageData.value = JSON.parse(event.data)
+            } catch (e) {
+                dialogOnClose()
+                console.error(e)
+            }
+        }
+        ws.onopen = () => {
+            ws.send(event.data)
+        }
+    } catch (e) {
+        dialogOnClose()
+        console.error(e)
     }
 }
 

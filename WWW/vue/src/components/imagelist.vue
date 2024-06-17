@@ -50,7 +50,7 @@ function viewImage(id) {
 <template>
     <v-select v-model="tag" :items="taglist" label="Select a tag" @update:modelValue="setTag" />
     <v-list>
-        <v-list-item v-for="i in (imageCount - (page - 1) * 10) > 10 ? 10 : (imageCount - (page - 1) * 10)" :key="i">
+        <v-list-item v-for="i in Math.min(10, imageCount - (page - 1) * 10)" :key="i">
             <v-list-item-title>Image #{{ imageIds[(page - 1) * 10 + i - 1] }}</v-list-item-title>
             <template v-slot:append>
                 <v-btn icon="mdi-eye" @click="viewImage(imageIds[(page - 1) * 10 + i - 1])" />

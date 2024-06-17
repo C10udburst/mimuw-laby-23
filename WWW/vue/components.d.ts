@@ -7,10 +7,8 @@ export {}
 
 declare module 'vue' {
   export interface GlobalComponents {
-    HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     Imagedialog: typeof import('./src/components/imagedialog.vue')['default']
     Imagelist: typeof import('./src/components/imagelist.vue')['default']
-    New_notifier: typeof import('./src/components/new_notifier.vue')['default']
     Notifier: typeof import('./src/components/notifier.vue')['default']
   }
 }

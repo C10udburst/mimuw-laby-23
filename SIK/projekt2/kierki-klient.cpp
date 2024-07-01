@@ -69,11 +69,6 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        if (!ipv4 && !ipv6) {
-            std::cerr << "IPv4 or IPv6 is required" << std::endl;
-            return 1;
-        }
-
         if (seat == 0) {
             std::cerr << "-N, -E, -S, or -W is required" << std::endl;
             return 1;
@@ -86,7 +81,12 @@ int main(int argc, char *argv[]) {
     { // resolve host and connect
         struct addrinfo hints{};
         memset(&hints, 0, sizeof(struct addrinfo));
-        hints.ai_family = ipv4 ? AF_INET : AF_INET6;
+        if (ipv4)
+            hints.ai_family = AF_INET;
+        else if (ipv6)
+            hints.ai_family = AF_INET6;
+        else
+            hints.ai_family = AF_UNSPEC;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_protocol = 0;
 

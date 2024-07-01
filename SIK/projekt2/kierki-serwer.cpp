@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
     }
 
     // start tcp server
-    auto server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    auto server_socket = socket(AF_INET6, SOCK_STREAM, 0);
     if (server_socket == -1) {
         std::cerr << "Cannot create socket" << std::endl;
         return 1;
@@ -65,11 +65,12 @@ int main(int argc, char *argv[]) {
     for (auto i = 0; i < 4; i++)
         server.clients[i].seat = i;
 
-    auto server_address = sockaddr_in{
-        .sin_family = AF_INET,
-        .sin_port = htons(port),
-        .sin_addr = in_addr{.s_addr = INADDR_ANY},
-        .sin_zero = {}
+    auto server_address = sockaddr_in6{
+        .sin6_family = AF_INET6,
+        .sin6_port = htons(port),
+        .sin6_flowinfo = 0,
+        .sin6_addr = in6addr_any,
+        .sin6_scope_id = 0
     };
 
     if (bind(server_socket, (sockaddr *) &server_address, sizeof(server_address)) == -1) {

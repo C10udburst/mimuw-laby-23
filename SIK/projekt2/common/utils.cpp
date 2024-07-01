@@ -5,6 +5,7 @@
 #include <netdb.h>
 #include <semaphore>
 #include <sstream>
+#include <arpa/inet.h>
 #include "errors.h"
 #include "utils.h"
 
@@ -87,13 +88,22 @@ namespace utils {
         }
     }
 
-    std::string addr2str(const struct sockaddr *addr, socklen_t addrlen) {
-        char name[INET6_ADDRSTRLEN + 5];
-        char port[10];
-        if (getnameinfo(addr, addrlen, name, sizeof(name), port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
-            throw errors::MainError("getnameinfo failed: " + std::string(strerror(errno)));
+    std::string addr2str(const struct sockaddr *addr, [[maybe_unused]] socklen_t addr_size) {
+        if (addr->sa_family == AF_INET) {
+            char name[INET_ADDRSTRLEN];
+            char port[6];
+            auto *addr_in = reinterpret_cast<const sockaddr_in *>(addr);
+            inet_ntop(AF_INET, &addr_in->sin_addr, name, INET_ADDRSTRLEN);
+            snprintf(port, 6, "%d", ntohs(addr_in->sin_port));
+            return std::string(name) + ":" + std::string(port);
+        } else {
+            char name[INET6_ADDRSTRLEN];
+            char port[6];
+            auto *addr_in6 = reinterpret_cast<const sockaddr_in6 *>(addr);
+            inet_ntop(AF_INET6, &addr_in6->sin6_addr, name, INET6_ADDRSTRLEN);
+            snprintf(port, 6, "%d", ntohs(addr_in6->sin6_port));
+            return std::string(name) + ":" + std::string(port);
         }
-        return std::string(name) + ":" + std::string(port);
     }
 
     std::string now2str() {

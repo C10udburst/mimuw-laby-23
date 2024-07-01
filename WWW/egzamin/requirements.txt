@@ -1,0 +1,4 @@
+fastapi
+faker
+beautifulsoup4
+httpx
